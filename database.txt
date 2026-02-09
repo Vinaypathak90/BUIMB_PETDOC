@@ -1,0 +1,10 @@
+// Aisa kuch hoga future mein
+const [doctorsData, setDoctorsData] = useState([]);
+useEffect(() => {
+   fetch('/api/doctors').then(res => res.json()).then(data => setDoctorsData(data));
+}, []);
+
+Is Code ka Future Use (Backend Connection):
+Jab aap database bana loge (Node.js/Firebase se), tab aapko bas doctorsData aur patientsData variables ko API response se replace karna hoga.
+
+Example Future Code:

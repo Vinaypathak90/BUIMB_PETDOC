@@ -1,13 +1,100 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* =========================================
+   GLOBAL THEME OVERRIDES
+   ========================================= */
+
+/* --- 0. LIGHT MODE (Default) --- */
+body.light-mode {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+body.light-mode .bg-white {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+}
+
+body.light-mode .bg-slate-50 {
+  background-color: #f8fafc !important;
+}
+
+body.light-mode .text-slate-800, 
+body.light-mode .text-slate-700,
+body.light-mode .text-slate-600 {
+  color: #0f172a !important;
+}
+
+/* --- 1. DARK MODE --- */
+body.dark-mode {
+  background-color: #0f172a !important; /* Deep Slate Background */
+  color: #f8fafc !important;
+}
+
+/* Force override standard Tailwind classes in Dark Mode */
+body.dark-mode .bg-white {
+  background-color: #1e293b !important; /* Card Color becomes Dark Slate */
+  color: #f8fafc !important;
+  border-color: #334155 !important;
+}
+
+body.dark-mode .bg-slate-50 {
+  background-color: #0f172a !important; /* Main Background becomes Darker */
+}
+
+body.dark-mode .text-slate-800, 
+body.dark-mode .text-slate-700,
+body.dark-mode .text-slate-600 {
+  color: #e2e8f0 !important; /* Dark text becomes Light */
+}
+
+/* Sidebar Specific for Dark Mode */
+body.dark-mode .bg-\[\#192a56\] {
+  background-color: #020617 !important; /* Sidebar becomes darker black/blue */
+}
+
+/* Input Fields in Dark Mode */
+body.dark-mode input, 
+body.dark-mode select, 
+body.dark-mode textarea {
+  background-color: #334155 !important;
+  color: white !important;
+  border-color: #475569 !important;
+}
+
+/* --- 2. BLUE MODE (Midnight) --- */
+body.blue-mode {
+  background-color: #172554 !important; /* Blue-950 */
+  color: #bfdbfe !important;
+}
+
+body.blue-mode .bg-white {
+  background-color: #1e3a8a !important; /* Card Color becomes Dark Blue */
+  color: #fff !important;
+  border-color: #2563eb !important;
+}
+
+body.blue-mode .bg-slate-50 {
+  background-color: #172554 !important;
+}
+
+body.blue-mode .text-slate-800, 
+body.blue-mode .text-slate-700 {
+  color: #dbeafe !important;
+}
+
+body.blue-mode .bg-\[\#192a56\] {
+  background-color: #1e40af !important; /* Sidebar becomes brighter blue */
+}
+
+/* --- 3. FONT SIZES --- */
+html.font-small {
+  font-size: 14px;
+}
+
+html.font-normal {
+  font-size: 16px;
+}
+
+html.font-large {
+  font-size: 19px; /* Thoda noticeable difference */
 }
