@@ -10,49 +10,47 @@ const Login = ({ onLogin }) => { // Accept onLogin prop from App.js
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
 
-  // --- HARDCODED CREDENTIALS ---
-  const USERS = {
-    'admin@petdoc.com': { pass: 'admin123', role: 'admin', name: 'Super Admin' },
-    'vinay@petdoc.com': { pass: 'recep123', role: 'receptionist', name: 'Vinay Pathak' },
-    'doctor@petdoc.com': { pass: 'doc123', role: 'doctor', name: 'Dr. Aditya Sharma' },
-    'user@petdoc.com': { pass: 'user123', role: 'patient', name: 'Rahul (Patient)' }
-  };
-
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    // Simulate Backend Authentication Delay
-    setTimeout(() => {
-      const user = USERS[email.toLowerCase()];
+    try {
+      // ✅ REAL BACKEND CALL
+      const response = await fetch('http://localhost:5000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
 
-      if (user && user.pass === password) {
+      const data = await response.json();
+
+      if (response.ok) {
         // ✅ Login Success
         setLoading(false);
         setSuccess(true);
         
         // Save Session
-        const userData = { email, role: user.role, name: user.name };
-        localStorage.setItem('user_token', JSON.stringify(userData)); 
+        localStorage.setItem('user_token', JSON.stringify(data)); 
 
-        // Redirect based on role (Visual feedback delay)
+        // Redirect based on role
         setTimeout(() => {
-          // Notify App.js that login happened (keeps App state in sync)
-          if (onLogin) onLogin(user.role);
+          if (onLogin) onLogin(data.role);
 
-          // Also navigate to the appropriate dashboard for the role
-          if (user.role === 'receptionist') navigate('/reception');
-          else if (user.role === 'admin') navigate('/admin/dashboard');
-          else if (user.role === 'doctor') navigate('/doctor/dashboard');
+          if (data.role === 'receptionist') navigate('/reception');
+          else if (data.role === 'admin') navigate('/admin/dashboard');
+          else if (data.role === 'doctor') navigate('/doctor/dashboard');
           else navigate('/user/dashboard');
         }, 1000);
       } else {
         // ❌ Login Failed
         setLoading(false);
-        setError('Invalid email or password');
+        setError(data.message || 'Invalid email or password');
       }
-    }, 1500);
+    } catch (err) {
+      setLoading(false);
+      setError('Server Error. Ensure backend is running.');
+    }
   };
 
   return (

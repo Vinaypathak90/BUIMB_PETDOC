@@ -6,21 +6,64 @@ const Signup = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [role, setRole] = useState("");
+  const [error, setError] = useState('');
 
-  const handleSignup = (e) => {
+  // 1. Define State for Form Data
+  const [formData, setFormData] = useState({
+    name: '',
+    role: '',
+    email: '',
+    password: ''
+  });
+
+  // 2. Handle Input Changes
+  const handleChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  // 3. Handle Signup Submission
+  const handleSignup = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError('');
 
-    // Simulated API Call
-    setTimeout(() => {
+    // Basic Validation: Ensure Role is selected
+    if (!formData.role) {
+      setError("Please select a role.");
       setLoading(false);
-      setSuccess(true);
-      
-      setTimeout(() => {
-        navigate('/login'); // Signup ke baad login par bhej do
-      }, 1500);
-    }, 1800);
+      return;
+    }
+
+    try {
+      // ✅ API CALL TO BACKEND
+      const response = await fetch('http://localhost:5000/api/auth/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // Success!
+        setLoading(false);
+        setSuccess(true);
+        
+        // Redirect after animation
+        setTimeout(() => {
+          navigate('/login'); 
+        }, 1500);
+      } else {
+        // Failed (e.g. Email exists)
+        setError(data.message || 'Signup Failed');
+        setLoading(false);
+      }
+    } catch (err) {
+      setError('Server Error. Is backend running?');
+      setLoading(false);
+    }
   };
 
   return (
@@ -77,6 +120,13 @@ const Signup = () => {
             <p className="text-slate-500 font-semibold text-sm">Create your professional account.</p>
           </div>
 
+          {/* Error Alert */}
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 text-red-500 text-xs font-bold rounded-xl text-center border border-red-100 animate-pulse">
+                {error}
+            </div>
+          )}
+
           <form className="space-y-4" onSubmit={handleSignup}>
             {/* Full Name */}
             <div className="group">
@@ -87,6 +137,9 @@ const Signup = () => {
                 </span>
                 <input 
                   type="text" 
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
                   required 
                   placeholder="Dr. John Doe" 
                   className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-semibold text-sm" 
@@ -102,21 +155,22 @@ const Signup = () => {
                   <Briefcase size={18} />
                 </span>
                 <select 
+                  name="role"
                   required
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
+                  value={formData.role}
+                  onChange={handleChange}
                   className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-semibold text-sm appearance-none cursor-pointer"
                 >
                   <option value="" disabled>Select your role</option>
                   <option value="doctor">Doctors / Specialists</option>
-                  <option value="user">Pet Owner (User)</option>
+                  <option value="patient">Pet Owner (User)</option>
                   <option value="receptionist">Receptionist</option>
                   <option value="admin">Administrator</option>
                 </select>
               </div>
-              {(role === 'admin' || role === 'doctor') && (
+              {(formData.role === 'admin' || formData.role === 'doctor') && (
                 <div className="mt-2 p-2 bg-amber-50 border border-amber-100 text-amber-700 text-[10px] rounded-lg animate-in fade-in slide-in-from-top-1">
-                  Note: {role.charAt(0).toUpperCase() + role.slice(1)} accounts need clinic approval.
+                  Note: {formData.role.charAt(0).toUpperCase() + formData.role.slice(1)} accounts need clinic approval.
                 </div>
               )}
             </div>
@@ -130,6 +184,9 @@ const Signup = () => {
                 </span>
                 <input 
                   type="email" 
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
                   required 
                   placeholder="name@clinic.com" 
                   className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-semibold text-sm" 
@@ -146,6 +203,9 @@ const Signup = () => {
                 </span>
                 <input 
                   type="password" 
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
                   required 
                   placeholder="••••••••" 
                   className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 outline-none transition-all font-semibold text-sm" 

@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import UserSidebar from '../../components/user/UserSidebar'; 
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { 
   Menu, Bell, User, MapPin, Mail, Phone, Calendar, 
   Edit3, Activity, Heart, Clock, Save, Globe, Flag, Droplet, ChevronDown,
-  CalendarPlus, Thermometer, Weight, ArrowRight, FileText // Added ArrowRight & FileText
+  CalendarPlus, Thermometer, Weight, ArrowRight, FileText
 } from 'lucide-react';
 
 const UserDashboard = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
 
   // --- COUNTRY LIST FOR SEARCH ---
@@ -29,40 +30,65 @@ const UserDashboard = () => {
   const [formData, setFormData] = useState(initialForm);
   const [userProfile, setUserProfile] = useState(null);
   const [appointments, setAppointments] = useState([]); 
-  const [recentReports, setRecentReports] = useState([]); // State for AI Reports
+  const [recentReports, setRecentReports] = useState([]); 
+  const [healthVitals, setHealthVitals] = useState(null); // Dynamic Vitals
   
   // --- DROPDOWN STATE ---
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [filteredCountries, setFilteredCountries] = useState(countriesList);
   const countryRef = useRef(null);
 
-  // --- MOCK VITALS ---
-  const vitals = [
-    { label: "Heart Rate", value: "72 Bpm", icon: Heart, color: "text-red-500", bg: "bg-red-50" },
-    { label: "Body Temp", value: "36.8 C", icon: Thermometer, color: "text-blue-500", bg: "bg-blue-50" },
-    { label: "Glucose", value: "90 mg/dl", icon: Activity, color: "text-yellow-500", bg: "bg-yellow-50" },
-    { label: "Blood Pressure", value: "120/80", icon: Activity, color: "text-emerald-500", bg: "bg-emerald-50" },
-    { label: "BMI", value: "20.1", icon: Weight, color: "text-purple-500", bg: "bg-purple-50" },
-    { label: "SpO2", value: "98%", icon: Droplet, color: "text-cyan-500", bg: "bg-cyan-50" },
-  ];
-
-  // --- LOAD DATA ON START ---
+  // --- 1. LOAD DATA FROM BACKEND ---
   useEffect(() => {
-    // 1. Load Profile
-    const savedProfile = localStorage.getItem('userProfile');
-    if (savedProfile) {
-      setUserProfile(JSON.parse(savedProfile));
-    } else {
-      setIsModalOpen(true);
-    }
+    const fetchDashboardData = async () => {
+      const storedData = JSON.parse(localStorage.getItem('user_token'));
+      
+      if (!storedData || !storedData.token) {
+        navigate('/login');
+        return;
+      }
 
-    // 2. Load Appointments
-    const savedApps = JSON.parse(localStorage.getItem('myAppointments')) || [];
-    setAppointments(savedApps);
+      try {
+        const response = await fetch('http://localhost:5000/api/user/dashboard', {
+          headers: {
+            'Authorization': `Bearer ${storedData.token}`
+          }
+        });
 
-    // 3. Load AI Analysis Reports (New Addition)
-    const savedReports = JSON.parse(localStorage.getItem('dashboardReports')) || [];
-    setRecentReports(savedReports);
+        if (response.status === 401) {
+            navigate('/login'); 
+            return;
+        }
+
+        const data = await response.json();
+
+        // 1. Profile Logic
+        if (data.profile) {
+          setUserProfile(data.profile);
+          setFormData(data.profile); // Populate edit form
+        } else {
+          // No profile? Open modal and prepopulate basic Auth data
+          setFormData(prev => ({ 
+             ...prev, 
+             name: storedData.name || '', 
+             email: storedData.email || '' 
+          }));
+          setIsModalOpen(true);
+        }
+
+        // 2. Set other data
+        setAppointments(data.appointments || []);
+        setRecentReports(data.reports || []);
+        setHealthVitals(data.vitals || null);
+
+      } catch (error) {
+        console.error("Error fetching dashboard:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchDashboardData();
 
     // Click outside handler
     const handleClickOutside = (event) => {
@@ -72,7 +98,7 @@ const UserDashboard = () => {
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [navigate]);
 
   // --- HANDLERS ---
   const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -98,17 +124,59 @@ const UserDashboard = () => {
     }
   };
 
-  const handleSaveProfile = (e) => {
+  // --- 2. SAVE PROFILE TO BACKEND ---
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
-    localStorage.setItem('userProfile', JSON.stringify(formData));
-    setUserProfile(formData);
-    setIsModalOpen(false);
+    const storedData = JSON.parse(localStorage.getItem('user_token'));
+
+    try {
+        const response = await fetch('http://localhost:5000/api/user/profile', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${storedData.token}`
+            },
+            body: JSON.stringify(formData)
+        });
+
+        const updatedProfile = await response.json();
+
+        if (response.ok) {
+            setUserProfile(updatedProfile);
+            setIsModalOpen(false);
+        } else {
+            alert("Failed to save profile.");
+        }
+    } catch (error) {
+        console.error("Error saving profile:", error);
+    }
   };
 
   const calculateAge = (dob) => {
     if (!dob) return 'N/A';
     return Math.abs(new Date(Date.now() - new Date(dob).getTime()).getUTCFullYear() - 1970);
   };
+
+  // Helper to structure vitals from backend data
+  const getVitalsDisplay = () => [
+    { label: "Heart Rate", value: healthVitals?.heartRate || "N/A", icon: Heart, color: "text-red-500", bg: "bg-red-50" },
+    { label: "Body Temp", value: healthVitals?.temp || "N/A", icon: Thermometer, color: "text-blue-500", bg: "bg-blue-50" },
+    { label: "Glucose", value: healthVitals?.glucose || "N/A", icon: Activity, color: "text-yellow-500", bg: "bg-yellow-50" },
+    { label: "Blood Pressure", value: healthVitals?.bp || "N/A", icon: Activity, color: "text-emerald-500", bg: "bg-emerald-50" },
+    { label: "BMI", value: healthVitals?.bmi || "N/A", icon: Weight, color: "text-purple-500", bg: "bg-purple-50" },
+    { label: "SpO2", value: healthVitals?.spo2 || "N/A", icon: Droplet, color: "text-cyan-500", bg: "bg-cyan-50" },
+  ];
+
+  if (isLoading) {
+    return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+             <div className="flex flex-col items-center gap-3 animate-pulse">
+                <div className="w-10 h-10 border-4 border-[#192a56] border-t-transparent rounded-full animate-spin"></div>
+                <p className="text-slate-500 font-bold">Loading your dashboard...</p>
+             </div>
+        </div>
+    );
+  }
 
   return (
     <div className="bg-slate-50 min-h-screen relative font-sans">
@@ -126,10 +194,7 @@ const UserDashboard = () => {
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg"><Menu size={24} /></button>
             
             <div className="flex items-center gap-4 ml-auto">
-                <button 
-                    onClick={() => navigate('/user/book-appointment')} 
-                    className="hidden sm:flex items-center gap-2 bg-[#00d0f1] text-[#192a56] px-5 py-2.5 rounded-xl font-bold hover:bg-cyan-400 transition-all shadow-md shadow-cyan-500/20"
-                >
+                <button onClick={() => navigate('/user/book-appointment')} className="hidden sm:flex items-center gap-2 bg-[#00d0f1] text-[#192a56] px-5 py-2.5 rounded-xl font-bold hover:bg-cyan-400 transition-all shadow-md">
                     <CalendarPlus size={18} /> Book Appointment
                 </button>
 
@@ -151,48 +216,49 @@ const UserDashboard = () => {
         
         <main className="p-8 max-w-7xl mx-auto">
           
-          {userProfile ? (
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
+          {/* Main Dashboard Content */}
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
                 
-                {/* Dashboard Welcome */}
+                {/* Welcome Section */}
                 <div className="flex flex-col md:flex-row justify-between items-end mb-2 gap-4">
                     <div>
-                        <h1 className="text-2xl font-bold text-slate-800">Welcome back, {userProfile.name}! 👋</h1>
+                        <h1 className="text-2xl font-bold text-slate-800">
+                            {userProfile ? `Welcome back, ${userProfile.name}! 👋` : 'Welcome back!'}
+                        </h1>
                         <p className="text-slate-500 text-sm">Here's your health overview.</p>
                     </div>
-                    <button 
-                        onClick={() => navigate('/user/book-appointment')} 
-                        className="sm:hidden w-full flex items-center justify-center gap-2 bg-[#00d0f1] text-[#192a56] px-5 py-3 rounded-xl font-bold"
-                    >
+                    <button onClick={() => navigate('/user/book-appointment')} className="sm:hidden w-full flex items-center justify-center gap-2 bg-[#00d0f1] text-[#192a56] px-5 py-3 rounded-xl font-bold">
                         <CalendarPlus size={18} /> Book Appointment
                     </button>
                 </div>
                 
                 {/* 1. Profile Summary Card */}
-                <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-6">
-                    <div className="flex items-center gap-6">
-                        <img src={userProfile.img} alt="" className="w-24 h-24 rounded-full object-cover border-4 border-slate-50 shadow-md" />
-                        <div>
-                            <h1 className="text-2xl font-black text-slate-800">{userProfile.name}</h1>
-                            <div className="flex gap-4 mt-1 text-sm text-slate-500">
-                                <span className="flex items-center gap-1"><User size={14}/> {userProfile.gender}, {calculateAge(userProfile.dob)} Yrs</span>
-                                <span className="flex items-center gap-1"><MapPin size={14}/> {userProfile.city}</span>
+                {userProfile && (
+                    <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row justify-between items-center gap-6">
+                        <div className="flex items-center gap-6">
+                            <img src={userProfile.img} alt="" className="w-24 h-24 rounded-full object-cover border-4 border-slate-50 shadow-md" />
+                            <div>
+                                <h1 className="text-2xl font-black text-slate-800">{userProfile.name}</h1>
+                                <div className="flex gap-4 mt-1 text-sm text-slate-500">
+                                    <span className="flex items-center gap-1"><User size={14}/> {userProfile.gender}, {calculateAge(userProfile.dob)} Yrs</span>
+                                    <span className="flex items-center gap-1"><MapPin size={14}/> {userProfile.city}</span>
+                                </div>
                             </div>
                         </div>
+                        <button onClick={() => {setFormData(userProfile); setIsModalOpen(true);}} className="text-slate-500 hover:text-slate-800 flex items-center gap-2 text-sm font-bold border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">
+                            <Edit3 size={16} /> Edit Profile
+                        </button>
                     </div>
-                    <button onClick={() => {setFormData(userProfile); setIsModalOpen(true);}} className="text-slate-500 hover:text-slate-800 flex items-center gap-2 text-sm font-bold border border-slate-200 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors">
-                        <Edit3 size={16} /> Edit Profile
-                    </button>
-                </div>
+                )}
 
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
                     
-                    {/* 2. Stats & Upcoming Appointments (Main Column) */}
+                    {/* 2. Stats & Upcoming Appointments */}
                     <div className="xl:col-span-2 space-y-8">
                         
-                        {/* Quick Stats Grid */}
+                        {/* Dynamic Stats Grid */}
                         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                            {vitals.map((v, i) => (
+                            {getVitalsDisplay().map((v, i) => (
                                 <div key={i} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center gap-3">
                                     <div className={`p-2.5 rounded-lg ${v.bg} ${v.color}`}><v.icon size={20}/></div>
                                     <div><p className="text-lg font-black text-slate-800">{v.value}</p><p className="text-[10px] font-bold text-slate-400 uppercase">{v.label}</p></div>
@@ -210,28 +276,25 @@ const UserDashboard = () => {
                             {appointments.length > 0 ? (
                                 <div className="space-y-4">
                                     {appointments.map((apt) => (
-                                        <div key={apt.id} className="flex flex-col md:flex-row items-center gap-4 p-5 border border-slate-100 rounded-2xl hover:border-[#00d0f1] transition-all bg-slate-50/50">
+                                        <div key={apt._id} className="flex flex-col md:flex-row items-center gap-4 p-5 border border-slate-100 rounded-2xl hover:border-[#00d0f1] transition-all bg-slate-50/50">
                                             <img
-                                                src={
-                                                    apt.doctorImg || apt.docImg || `https://ui-avatars.com/api/?name=${encodeURIComponent(apt.doctorName || apt.doctor || 'Doctor')}&background=random`
-                                                }
-                                                alt={apt.doctorName || apt.doctor || 'Doctor'}
+                                                src={apt.doctorImg || `https://ui-avatars.com/api/?name=${encodeURIComponent(apt.doctorName)}&background=random`}
+                                                alt={apt.doctorName}
                                                 className="w-16 h-16 rounded-xl object-cover shadow-sm"
                                             />
                                             <div className="flex-1 text-center md:text-left">
                                                 <h4 className="font-bold text-slate-800 text-lg">{apt.doctorName}</h4>
                                                 <p className="text-sm text-slate-500 font-medium mb-1">{apt.speciality}</p>
-                                                <p className="text-xs text-slate-400 font-bold uppercase">Patient: {apt.patientName}</p>
+                                                <p className="text-xs text-slate-400 font-bold uppercase">{apt.status}</p>
                                             </div>
                                             <div className="text-right flex flex-col items-center md:items-end gap-1">
                                                 <span className="bg-white border border-slate-200 px-3 py-1 rounded-lg text-xs font-bold text-slate-600 flex items-center gap-2">
-                                                    <Calendar size={14}/> {apt.date} ({apt.day})
+                                                    <Calendar size={14}/> {apt.date}
                                                 </span>
                                                 <span className="bg-white border border-slate-200 px-3 py-1 rounded-lg text-xs font-bold text-[#00d0f1] flex items-center gap-2">
                                                     <Clock size={14}/> {apt.time}
                                                 </span>
                                             </div>
-                                            <span className="px-4 py-1.5 bg-emerald-100 text-emerald-700 text-xs font-black rounded-lg uppercase tracking-wide">Paid</span>
                                         </div>
                                     ))}
                                 </div>
@@ -245,32 +308,29 @@ const UserDashboard = () => {
                         </div>
                     </div>
 
-                    {/* 3. Right Sidebar (Health Score & Diagnosis) */}
+                    {/* 3. Right Sidebar */}
                     <div className="xl:col-span-1 flex flex-col gap-6">
-                        
-                        {/* Health Score Card */}
+                        {/* Health Score */}
                         <div className="bg-gradient-to-br from-[#192a56] to-blue-900 rounded-2xl p-8 text-white relative overflow-hidden flex flex-col justify-center items-center text-center shadow-xl min-h-[200px]">
                             <Activity size={80} className="mb-6 opacity-20 absolute top-4 left-4" />
                             <h3 className="text-2xl font-black mb-2 relative z-10">Health Score</h3>
                             <div className="text-6xl font-black text-[#00d0f1] mb-2 relative z-10">92%</div>
-                            <p className="text-blue-200 text-sm relative z-10">Your health stats are looking great! Keep up the good work.</p>
+                            <p className="text-blue-200 text-sm relative z-10">Based on your recent vitals.</p>
                         </div>
 
-                        {/* Recent Diagnosis Card (NEW ADDITION) */}
+                        {/* Recent Reports */}
                         <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex-1">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
                                     <Activity className="text-emerald-500" size={20}/> Recent Diagnosis
                                 </h3>
-                                <Link to="/user/ai-analysis" className="text-xs font-bold text-blue-600 hover:underline">
-                                    New Analysis
-                                </Link>
+                                <Link to="/user/ai-analysis" className="text-xs font-bold text-blue-600 hover:underline">New Analysis</Link>
                             </div>
 
                             <div className="space-y-4">
                                 {recentReports.length > 0 ? (
                                     recentReports.slice(0, 3).map((report) => (
-                                        <div key={report.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-blue-50 hover:border-blue-100 transition-all group">
+                                        <div key={report._id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-blue-50 hover:border-blue-100 transition-all group">
                                             <div className="flex justify-between items-start mb-2">
                                                 <div>
                                                     <h4 className="font-bold text-slate-800 text-sm">{report.disease}</h4>
@@ -282,11 +342,7 @@ const UserDashboard = () => {
                                                     {report.severity}
                                                 </span>
                                             </div>
-                                            
-                                            <p className="text-xs text-slate-500 line-clamp-2 mb-3">
-                                                {report.findings}
-                                            </p>
-                                            
+                                            <p className="text-xs text-slate-500 line-clamp-2 mb-3">{report.findings}</p>
                                             <Link to="/user/book-appointment" className="text-[10px] font-bold text-[#192a56] flex items-center gap-1 group-hover:gap-2 transition-all">
                                                 Book {report.doctorType} <ArrowRight size={12}/>
                                             </Link>
@@ -294,77 +350,54 @@ const UserDashboard = () => {
                                     ))
                                 ) : (
                                     <div className="text-center py-8">
-                                        <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-400">
-                                            <FileText size={20}/>
-                                        </div>
+                                        <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-400"><FileText size={20}/></div>
                                         <p className="text-sm font-bold text-slate-400">No reports yet</p>
-                                        <p className="text-xs text-slate-400 mt-1">Upload a report in AI Chat to see it here.</p>
                                     </div>
                                 )}
                             </div>
                         </div>
-
                     </div>
-
                 </div>
             </div>
-          ) : (
-            <div className="h-[80vh] flex items-center justify-center">
-                <p className="text-slate-400 animate-pulse font-medium">Loading Dashboard...</p>
-            </div>
-          )}
         </main>
       </div>
 
-      {/* --- PROFESSIONAL ONBOARDING MODAL --- */}
+      {/* --- MODAL (EDIT PROFILE) --- */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#192a56]/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
            <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-              
-              {/* Modal Header */}
               <div className="bg-white border-b border-slate-100 p-6 flex items-center justify-between sticky top-0 z-10">
-                 <div>
-                    <h2 className="text-2xl font-black text-slate-800">Setup Your Profile</h2>
-                    <p className="text-slate-500 text-sm">Please provide accurate details for better medical assistance.</p>
-                 </div>
-                 <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 font-bold">
-                    1/1
-                 </div>
+                 <div><h2 className="text-2xl font-black text-slate-800">Setup Your Profile</h2><p className="text-slate-500 text-sm">Please provide accurate details.</p></div>
+                 <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 font-bold">1/1</div>
               </div>
 
-              {/* Scrollable Form Body */}
               <div className="p-8 overflow-y-auto custom-scrollbar">
                  <form onSubmit={handleSaveProfile} className="space-y-8">
-                    
-                    {/* 1. Profile Picture */}
+                    {/* Image Upload */}
                     <div className="flex flex-col items-center">
                         <div className="relative group cursor-pointer w-28 h-28">
                             <img src={formData.img} alt="Upload" className="w-full h-full rounded-full object-cover border-4 border-slate-100 shadow-md group-hover:border-blue-100 transition-all" />
-                            <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-xs font-bold">
-                                Change
-                            </div>
+                            <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-xs font-bold">Change</div>
                             <input type="file" accept="image/*" onChange={handleImageChange} className="absolute inset-0 opacity-0 cursor-pointer" />
                         </div>
                         <p className="text-xs text-slate-400 mt-2 font-medium">Upload Profile Picture</p>
                     </div>
 
-                    {/* 2. Personal Information Section */}
+                    {/* Personal Info */}
                     <div>
                         <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">Personal Information</h3>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                             <div className="md:col-span-2">
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Full Name</label>
-                                <div className="relative"><User size={18} className="absolute top-3 left-3 text-slate-400"/><input type="text" name="name" required value={formData.name} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700" placeholder="e.g. John Doe" /></div>
+                                <div className="relative"><User size={18} className="absolute top-3 left-3 text-slate-400"/><input type="text" name="name" required value={formData.name} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700" /></div>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date of Birth</label>
-                                <div className="relative"><Calendar size={18} className="absolute top-3 left-3 text-slate-400"/><input type="date" name="dob" required value={formData.dob} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700 text-sm" /></div>
+                                <div className="relative"><Calendar size={18} className="absolute top-3 left-3 text-slate-400"/><input type="date" name="dob" required value={formData.dob ? formData.dob.split('T')[0] : ''} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700 text-sm" /></div>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Gender</label>
-                                <select name="gender" value={formData.gender} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700 bg-white">
-                                    <option>Male</option><option>Female</option><option>Other</option>
-                                </select>
+                                <select name="gender" value={formData.gender} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700 bg-white"><option>Male</option><option>Female</option><option>Other</option></select>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Blood Group</label>
@@ -373,83 +406,59 @@ const UserDashboard = () => {
                         </div>
                     </div>
 
-                    {/* 3. Contact Details */}
+                    {/* Contact & Address */}
                     <div>
                         <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">Contact Details</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email Address</label>
-                                <div className="relative"><Mail size={18} className="absolute top-3 left-3 text-slate-400"/><input type="email" name="email" required value={formData.email} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700" placeholder="john@example.com" /></div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Email</label>
+                                <div className="relative"><Mail size={18} className="absolute top-3 left-3 text-slate-400"/><input type="email" name="email" required value={formData.email} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700" /></div>
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Phone Number</label>
-                                <div className="relative"><Phone size={18} className="absolute top-3 left-3 text-slate-400"/><input type="text" name="phone" required value={formData.phone} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700" placeholder="+91 9876543210" /></div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Phone</label>
+                                <div className="relative"><Phone size={18} className="absolute top-3 left-3 text-slate-400"/><input type="text" name="phone" required value={formData.phone} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700" /></div>
                             </div>
                         </div>
                     </div>
 
-                    {/* 4. Location Information (Smart Search) */}
                     <div>
-                        <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">Location Information</h3>
+                        <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-4 border-b border-slate-100 pb-2">Location</h3>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                            
-                            {/* SEARCHABLE COUNTRY DROPDOWN */}
                             <div className="relative" ref={countryRef}>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Country</label>
                                 <div className="relative">
                                     <Globe size={18} className="absolute top-3 left-3 text-slate-400"/>
-                                    <input 
-                                        type="text" 
-                                        name="country" 
-                                        value={formData.country} 
-                                        onChange={handleCountryChange} 
-                                        onFocus={() => setShowCountryDropdown(true)}
-                                        className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700" 
-                                        placeholder="Type to search (e.g. India)" 
-                                        autoComplete="off"
-                                    />
+                                    <input type="text" name="country" value={formData.country} onChange={handleCountryChange} onFocus={() => setShowCountryDropdown(true)} className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700" autoComplete="off" />
                                     <ChevronDown size={16} className="absolute top-3 right-3 text-slate-400 pointer-events-none" />
                                 </div>
-                                {/* Dropdown */}
                                 {showCountryDropdown && (
                                     <ul className="absolute z-50 w-full bg-white border border-slate-200 rounded-xl shadow-xl mt-1 max-h-40 overflow-y-auto">
-                                        {filteredCountries.length > 0 ? (
-                                            filteredCountries.map((c, i) => (
-                                                <li key={i} onClick={() => selectCountry(c)} className="px-4 py-2 hover:bg-slate-50 cursor-pointer text-sm font-medium text-slate-700 border-b border-slate-50 last:border-0">
-                                                    {c}
-                                                </li>
-                                            ))
-                                        ) : (
-                                            <li className="px-4 py-2 text-xs text-slate-400">No country found</li>
-                                        )}
+                                        {filteredCountries.map((c, i) => (
+                                            <li key={i} onClick={() => selectCountry(c)} className="px-4 py-2 hover:bg-slate-50 cursor-pointer text-sm font-medium text-slate-700 border-b border-slate-50 last:border-0">{c}</li>
+                                        ))}
                                     </ul>
                                 )}
                             </div>
-
                             <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">State / Region</label>
-                                <div className="relative"><Flag size={18} className="absolute top-3 left-3 text-slate-400"/><input type="text" name="state" value={formData.state} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700" placeholder="e.g. Karnataka" /></div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">State</label>
+                                <div className="relative"><Flag size={18} className="absolute top-3 left-3 text-slate-400"/><input type="text" name="state" value={formData.state} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700" /></div>
                             </div>
-
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">City</label>
-                                <div className="relative"><MapPin size={18} className="absolute top-3 left-3 text-slate-400"/><input type="text" name="city" value={formData.city} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700" placeholder="e.g. Bangalore" /></div>
+                                <div className="relative"><MapPin size={18} className="absolute top-3 left-3 text-slate-400"/><input type="text" name="city" value={formData.city} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 focus:border-blue-500 outline-none font-bold text-slate-700" /></div>
                             </div>
-
                             <div className="md:col-span-3">
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Full Address</label>
-                                <textarea name="address" rows="2" value={formData.address} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:border-blue-500 outline-none font-bold text-slate-700" placeholder="Street, Apartment, Zip Code" />
+                                <textarea name="address" rows="2" value={formData.address} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 focus:border-blue-500 outline-none font-bold text-slate-700" />
                             </div>
                         </div>
                     </div>
 
-                    {/* Submit Button */}
                     <div className="pt-4">
-                        <button type="submit" className="w-full bg-[#192a56] text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-900 transition-all shadow-xl shadow-blue-900/20 flex items-center justify-center gap-2">
-                            <Save size={20} /> Save & Continue to Dashboard
+                        <button type="submit" className="w-full bg-[#192a56] text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-900 transition-all shadow-xl flex items-center justify-center gap-2">
+                            <Save size={20} /> Save Profile
                         </button>
                     </div>
-
                  </form>
               </div>
            </div>

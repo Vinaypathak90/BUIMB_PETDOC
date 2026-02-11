@@ -14,17 +14,8 @@ const BookAppointment = () => {
   // --- STEPS STATE (1: Form, 2: Select Doctor, 3: Payment) ---
   const [step, setStep] = useState(1); 
   const [selectedDoctor, setSelectedDoctor] = useState(null);
-
-  // --- MOCK DOCTORS DATABASE ---
-  const allDoctors = [
-    { id: 1, name: "Dr. Ruby Perrin", speciality: "Dentist", fee: 500, exp: "10 Yrs", rating: 4.8, img: "https://randomuser.me/api/portraits/women/44.jpg" },
-    { id: 2, name: "Dr. Darren Elder", speciality: "Pet Surgery", fee: 800, exp: "8 Yrs", rating: 4.9, img: "https://randomuser.me/api/portraits/men/32.jpg" },
-    { id: 3, name: "Dr. Deborah Angel", speciality: "Cardiology", fee: 1200, exp: "15 Yrs", rating: 5.0, img: "https://randomuser.me/api/portraits/women/68.jpg" },
-    { id: 4, name: "Dr. Sofia Brient", speciality: "Urology", fee: 600, exp: "5 Yrs", rating: 4.5, img: "https://randomuser.me/api/portraits/women/65.jpg" },
-    { id: 5, name: "Dr. John Gibbs", speciality: "Dentist", fee: 450, exp: "4 Yrs", rating: 4.2, img: "https://randomuser.me/api/portraits/men/45.jpg" },
-    { id: 6, name: "Dr. Marvin Campbell", speciality: "Pet Orthopedics", fee: 750, exp: "12 Yrs", rating: 4.7, img: "https://randomuser.me/api/portraits/men/51.jpg" },
-    { id: 7, name: "Dr. Paul Richard", speciality: "Neurology", fee: 1500, exp: "20 Yrs", rating: 4.9, img: "https://randomuser.me/api/portraits/men/11.jpg" },
-  ];
+  const [doctorsList, setDoctorsList] = useState([]); // Fetch from DB
+  const [loadingDoctors, setLoadingDoctors] = useState(false);
 
   // --- FORM STATE ---
   const [bookingType, setBookingType] = useState('myself'); // myself, pet, other
@@ -33,7 +24,8 @@ const BookAppointment = () => {
     problem: '', // Speciality
     date: '', time: '', day: '',
     symptoms: '', petType: 'Dog', petName: '',
-    files: null
+    medicalReport: '', // ✅ Base64 file string
+    fileName: ''       // ✅ To show in UI
   });
 
   // Autocomplete State
@@ -52,20 +44,47 @@ const BookAppointment = () => {
 
   // --- INITIAL LOAD ---
   useEffect(() => {
-    // Auto-fill from Profile if 'Myself' is selected
-    const savedProfile = localStorage.getItem('userProfile');
-    if(savedProfile && bookingType === 'myself') {
-        const user = JSON.parse(savedProfile);
-        setFormData(prev => ({...prev, name: user.name, age: user.age || '', phone: user.phone || ''}));
-    } else if (bookingType === 'pet') {
-        const user = JSON.parse(savedProfile);
-        setFormData(prev => ({...prev, name: user.name})); // Owner Name
-    } else {
-        // Clear for 'Other'
-        setFormData(prev => ({...prev, name: '', age: ''}));
-    }
+    // 1. Fetch Doctors from Backend
+    const fetchDoctors = async () => {
+        try {
+            const res = await fetch('http://localhost:5000/api/appointments/doctors');
+            const data = await res.json();
+            setDoctorsList(data);
+        } catch (error) {
+            console.error("Failed to load doctors", error);
+        }
+    };
+    fetchDoctors();
 
-    // Close Dropdown on Click Outside
+    // 2. Pre-fill user data
+    const fetchProfile = async () => {
+        const storedData = JSON.parse(localStorage.getItem('user_token'));
+        if(storedData) {
+            try {
+                const res = await fetch('http://localhost:5000/api/user/dashboard', {
+                    headers: { 'Authorization': `Bearer ${storedData.token}` }
+                });
+                const data = await res.json();
+                if(data.profile) {
+                    if (bookingType === 'myself') {
+                        setFormData(prev => ({
+                            ...prev, 
+                            name: data.profile.name || '', 
+                            phone: data.profile.phone || ''
+                        }));
+                    } else if (bookingType === 'pet') {
+                        setFormData(prev => ({
+                            ...prev, 
+                            name: data.profile.name || '' // Owner name
+                        }));
+                    }
+                }
+            } catch (err) { console.error(err); }
+        }
+    };
+    fetchProfile();
+
+    // Click outside handler
     const handleClickOutside = (event) => {
       if (searchRef.current && !searchRef.current.contains(event.target)) setShowDropdown(false);
     };
@@ -79,7 +98,7 @@ const BookAppointment = () => {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
 
-    // Auto-calculate Day if Date changes
+    // Auto-calculate Day
     if (name === 'date') {
         const d = new Date(value);
         const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
@@ -100,12 +119,27 @@ const BookAppointment = () => {
     setShowDropdown(false);
   };
 
-  // File Upload Handler
+  // ✅ UPDATED FILE UPLOAD HANDLER (BASE64)
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      setFormData({ ...formData, files: file.name });
-      setTimeout(() => alert("AI Analysis: Report scanned successfully!"), 1000);
+        // Validation: 5MB Limit
+        if (file.size > 5 * 1024 * 1024) {
+            alert("File is too large! Please upload under 5MB.");
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onloadend = () => {
+            // Update state with Base64 string
+            setFormData(prev => ({ 
+                ...prev, 
+                medicalReport: reader.result, 
+                fileName: file.name 
+            }));
+            setTimeout(() => alert("Report scanned & attached successfully!"), 500);
+        };
     }
   };
 
@@ -125,34 +159,45 @@ const BookAppointment = () => {
   };
 
   // FINAL PAYMENT & BOOKING
-  const handlePayment = () => {
-    // 1. Create Appointment Object
-    const newAppointment = {
-        id: Date.now(),
-        doctorName: selectedDoctor.name,
-        doctorImg: selectedDoctor.img,
-        speciality: selectedDoctor.speciality,
-        patientName: bookingType === 'pet' ? formData.petName : formData.name,
-        date: formData.date,
-        day: formData.day,
-        time: formData.time,
-        fee: selectedDoctor.fee,
-        status: "Confirmed", // Approved status
-        type: bookingType // 'myself', 'pet', 'other'
-    };
+  const handlePayment = async () => {
+    const storedData = JSON.parse(localStorage.getItem('user_token'));
+    if(!storedData) {
+        alert("Please login to book.");
+        navigate('/login');
+        return;
+    }
 
-    // 2. Save to LocalStorage (This makes it appear on Dashboard)
-    const existingApps = JSON.parse(localStorage.getItem('myAppointments')) || [];
-    localStorage.setItem('myAppointments', JSON.stringify([newAppointment, ...existingApps]));
+    try {
+        const response = await fetch('http://localhost:5000/api/appointments', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${storedData.token}`
+            },
+            body: JSON.stringify({
+                doctor: selectedDoctor,
+                formData: formData, // Contains medicalReport as Base64
+                bookingType: bookingType
+            })
+        });
 
-    // 3. Success & Redirect
-    alert("Payment Successful! Appointment Approved.");
-    navigate('/user/dashboard');
+        if (response.ok) {
+            alert("Payment Successful! Appointment Approved.");
+            navigate('/user/dashboard');
+        } else {
+            const err = await response.json();
+            alert("Booking Failed: " + err.message);
+        }
+    } catch (error) {
+        alert("Server Error. Please try again.");
+    }
   };
 
   // Filter Doctors based on selection
-  const matchingDoctors = allDoctors.filter(doc => 
-    doc.speciality.toLowerCase().includes(formData.problem.toLowerCase())
+  const matchingDoctors = doctorsList.filter(doc => 
+    doc.speciality.toLowerCase().includes(formData.problem.toLowerCase()) || 
+    (formData.problem.toLowerCase().includes("pet") && doc.speciality.toLowerCase().includes("pet")) ||
+    (formData.problem.toLowerCase().includes("dentist") && doc.speciality.toLowerCase().includes("dentist"))
   );
 
   return (
@@ -220,7 +265,7 @@ const BookAppointment = () => {
                             </>
                         )}
 
-                        {/* Speciality Search (Critical for Step 2) */}
+                        {/* Speciality Search */}
                         <div className="relative" ref={searchRef}>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Looking For (Specialist)</label>
                             <div className="relative">
@@ -249,8 +294,9 @@ const BookAppointment = () => {
                                 <p className="text-xs text-blue-500">AI will analyze this for the doctor.</p>
                             </div>
                             <label className="cursor-pointer bg-white text-blue-600 px-4 py-2 rounded-lg font-bold shadow-sm border border-blue-100 flex items-center gap-2 hover:bg-blue-50 transition-all">
-                                <Upload size={16} /> {formData.files ? 'File Selected' : 'Upload File'}
-                                <input type="file" className="hidden" onChange={handleFileChange} />
+                                <Upload size={16} /> 
+                                {formData.fileName ? formData.fileName.substring(0, 15) + '...' : 'Upload File'}
+                                <input type="file" className="hidden" accept="image/*,.pdf" onChange={handleFileChange} />
                             </label>
                         </div>
 
@@ -294,7 +340,7 @@ const BookAppointment = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {matchingDoctors.length > 0 ? (
                         matchingDoctors.map((doc) => (
-                            <div key={doc.id} className="bg-white border border-slate-200 rounded-2xl p-5 hover:border-[#00d0f1] hover:shadow-lg transition-all flex gap-4 group cursor-pointer" onClick={() => handleSelectDoctor(doc)}>
+                            <div key={doc._id} className="bg-white border border-slate-200 rounded-2xl p-5 hover:border-[#00d0f1] hover:shadow-lg transition-all flex gap-4 group cursor-pointer" onClick={() => handleSelectDoctor(doc)}>
                                 <img src={doc.img} alt="" className="w-20 h-20 rounded-xl object-cover border border-slate-100" />
                                 <div className="flex-1">
                                     <h4 className="font-bold text-lg text-slate-800 group-hover:text-[#00d0f1] transition-colors">{doc.name}</h4>
@@ -331,7 +377,6 @@ const BookAppointment = () => {
                 <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm h-fit">
                     <h3 className="text-lg font-bold text-slate-800 mb-6 border-b border-slate-100 pb-4">Booking Summary</h3>
                     
-                    {/* Doctor Info */}
                     <div className="flex items-center gap-4 mb-6">
                         <img src={selectedDoctor.img} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-slate-50" />
                         <div>
@@ -341,7 +386,6 @@ const BookAppointment = () => {
                         </div>
                     </div>
 
-                    {/* Schedule Info */}
                     <div className="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-100">
                         <div className="flex justify-between mb-2">
                             <span className="text-xs font-bold text-slate-400 uppercase">Patient</span>
@@ -357,7 +401,6 @@ const BookAppointment = () => {
                         </div>
                     </div>
 
-                    {/* Payment Breakdown */}
                     <div className="space-y-3 text-sm">
                         <div className="flex justify-between"><span className="text-slate-500">Consultation Fee</span><span className="font-bold text-slate-800">₹{selectedDoctor.fee}</span></div>
                         <div className="flex justify-between"><span className="text-slate-500">Booking Charge</span><span className="font-bold text-slate-800">₹50</span></div>
@@ -370,7 +413,7 @@ const BookAppointment = () => {
                     </div>
                 </div>
 
-                {/* 3b. Payment Form */}
+                {/* 3b. Payment Form (Visual Only for now) */}
                 <div className="bg-[#192a56] rounded-[2rem] p-8 text-white shadow-2xl relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-64 h-64 bg-[#00d0f1] rounded-full blur-[80px] opacity-20 -mr-16 -mt-16"></div>
                     
