@@ -1,10 +1,21 @@
 const mongoose = require('mongoose');
 
 const appointmentSchema = mongoose.Schema({
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    // User who booked the appointment
+    user: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'User', 
+        required: true 
+    },
     
-    // Doctor Details
-    doctorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' },
+    // ✅ CHANGED 'doctorId' to 'doctor' so .populate('doctor') works!
+    doctor: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'Doctor',
+        required: true 
+    },
+
+    // Snapshot Data (Saved in case doctor changes later)
     doctorName: { type: String, required: true },
     speciality: { type: String },
     doctorImg: { type: String },
@@ -25,7 +36,7 @@ const appointmentSchema = mongoose.Schema({
     problem: { type: String },
     symptoms: { type: String },
     
-    // ✅ YE LINE ADD KARO (Bohot Important)
+    // ✅ ADDED AS REQUESTED
     medicalReport: { type: String }, 
 
     date: { type: String, required: true },

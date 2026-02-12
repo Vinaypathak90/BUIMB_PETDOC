@@ -3,7 +3,7 @@ import UserSidebar from '../../components/user/UserSidebar';
 import { 
   Menu, Bell, Search, Filter, Download, FileText, 
   RotateCcw, Eye, Star, Calendar, Clock, CheckCircle, XCircle,
-  MapPin, Shield, DollarSign, X
+  MapPin, Shield, DollarSign, X,Loader2
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -12,46 +12,62 @@ const PastAppointments = () => {
   const [activeTab, setActiveTab] = useState('all'); 
   const [searchTerm, setSearchTerm] = useState('');
   const [appointments, setAppointments] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   
   // --- MODAL STATES ---
   const [selectedPrescription, setSelectedPrescription] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
-  const [ratingModal, setRatingModal] = useState(null); // Stores appointment ID to rate
+  const [ratingModal, setRatingModal] = useState(null);
 
   const navigate = useNavigate();
 
-  // --- MOCK DATA (Merged with LocalStorage) ---
-  const mockHistory = [
-    { 
-      id: 101, doctorName: "Dr. Ruby Perrin", speciality: "Dentist", 
-      date: "2023-10-12", time: "10:00 AM", status: "Completed", 
-      patient: "Vinay Pathak", fee: 500, rating: 5, type: "Myself",
-      prescription: { meds: ["Paracetamol - 500mg (2x)", "Amoxicillin - 250mg"], note: "Take rest for 2 days. Avoid cold water.", followUp: "2023-10-20" }
-    },
-    { 
-      id: 102, doctorName: "Dr. Darren Elder", speciality: "Pet Surgery", 
-      date: "2023-09-25", time: "02:30 PM", status: "Cancelled", 
-      patient: "Bruno (Dog)", fee: 800, rating: 0, type: "Pet",
-      prescription: null 
-    },
-    { 
-      id: 103, doctorName: "Dr. Sofia Brient", speciality: "Urology", 
-      date: "2023-08-14", time: "11:00 AM", status: "Completed", 
-      patient: "Vinay Pathak", fee: 600, rating: 0, type: "Myself", // Rating 0 means not rated yet
-      prescription: { meds: ["Cital - Syrup (10ml)", "Urimax - 0.4mg"], note: "Drink plenty of water.", followUp: "No need" }
-    }
-  ];
-
-  // --- LOAD DATA ---
+  // --- FETCH REAL DATA FROM BACKEND ---
   useEffect(() => {
-    const localData = JSON.parse(localStorage.getItem('myAppointments')) || [];
-    // Combine mock data with local data for demo
-    setAppointments([...localData, ...mockHistory]);
-  }, []);
+    const fetchHistory = async () => {
+        const storedData = JSON.parse(localStorage.getItem('user_token'));
+        if (!storedData) {
+            navigate('/login');
+            return;
+        }
+
+        try {
+            const res = await fetch('http://localhost:5000/api/appointments/my-history', {
+                headers: { 'Authorization': `Bearer ${storedData.token}` }
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                
+                // Transform data to match UI structure if needed
+                const formattedData = data.map(app => ({
+                    id: app._id,
+                    doctorName: app.doctorName, // Or app.doctor.name if populated
+                    speciality: app.speciality || "General",
+                    doctorImg: app.doctorImg,
+                    date: new Date(app.date).toLocaleDateString(),
+                    time: app.time,
+                    status: app.status || "Completed", // Default to completed for history
+                    patient: app.patientName,
+                    fee: app.fee,
+                    rating: app.rating || 0,
+                    prescription: null // In real app, fetch from DB
+                }));
+
+                setAppointments(formattedData);
+            }
+        } catch (error) {
+            console.error("Error loading history:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    fetchHistory();
+  }, [navigate]);
 
   // --- HANDLERS ---
   const handleRateDoctor = (id, stars) => {
-    // Update local state to reflect rating
+    // Call API to save rating here
     const updatedList = appointments.map(app => 
       app.id === id ? { ...app, rating: stars } : app
     );
@@ -60,11 +76,40 @@ const PastAppointments = () => {
     alert("Thank you for your feedback!");
   };
 
-  const filteredList = appointments.filter(app => {
-    const matchStatus = activeTab === 'all' ? true : app.status?.toLowerCase() === activeTab;
-    const matchSearch = app.doctorName?.toLowerCase().includes(searchTerm.toLowerCase()) || app.speciality?.toLowerCase().includes(searchTerm.toLowerCase());
+const filteredList = appointments.filter(app => {
+    // 1. Normalize Status from DB (Handle case sensitivity)
+    const status = app.status?.toLowerCase() || '';
+    
+    // 2. Determine match based on active tab
+    let matchStatus = false;
+
+    if (activeTab === 'all') {
+        matchStatus = true;
+    } else if (activeTab === 'upcoming') {
+        // Map 'upcoming' tab -> 'scheduled' status
+        matchStatus = status === 'scheduled';
+    } else {
+        // For 'completed' and 'cancelled', just match the lowercased strings
+        matchStatus = status === activeTab;
+    }
+
+    // 3. Search Filter (Keep existing logic)
+    const matchSearch = app.doctorName?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                        app.speciality?.toLowerCase().includes(searchTerm.toLowerCase());
+
     return matchStatus && matchSearch;
   });
+if (isLoading) {
+      return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+              <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center animate-in fade-in zoom-in duration-300">
+                  <Loader2 size={40} className="text-[#00d0f1] animate-spin mb-4" />
+                  <h3 className="text-lg font-black text-slate-800">Loading Appointments...</h3>
+                  <p className="text-slate-400 text-xs font-medium mt-1">Fetching your medical history securely</p>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <div className="bg-slate-50 min-h-screen relative font-sans">
@@ -182,13 +227,6 @@ const PastAppointments = () => {
                                         <DollarSign size={18}/>
                                     </button>
 
-                                    {/* Prescription (Only if Completed) */}
-                                    {app.status === 'Completed' && (
-                                        <button onClick={() => setSelectedPrescription({ ...app.prescription, doctor: app.doctorName, date: app.date })} className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:bg-slate-50 hover:text-[#00d0f1] transition-colors flex items-center gap-2">
-                                            <Eye size={14}/> View Rx
-                                        </button>
-                                    )}
-
                                     {/* Book Again */}
                                     <button onClick={() => navigate('/user/book-appointment')} className="px-5 py-2 bg-[#192a56] text-white rounded-lg text-xs font-bold hover:bg-blue-900 transition-all shadow-md shadow-blue-900/10 flex items-center gap-2">
                                         <RotateCcw size={14}/> Book Again
@@ -210,44 +248,6 @@ const PastAppointments = () => {
           </div>
         </main>
       </div>
-
-      {/* --- 1. PRESCRIPTION MODAL --- */}
-      {selectedPrescription && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95 duration-200">
-            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden relative">
-                <div className="bg-[#192a56] p-6 text-white flex justify-between items-start">
-                    <div>
-                        <h3 className="text-lg font-bold flex items-center gap-2"><FileText size={18}/> Digital Prescription</h3>
-                        <p className="text-xs text-blue-200 opacity-80 mt-1">Dr. {selectedPrescription.doctor} • {selectedPrescription.date}</p>
-                    </div>
-                    <button onClick={() => setSelectedPrescription(null)} className="p-1 hover:bg-white/10 rounded-full transition-colors"><X size={20}/></button>
-                </div>
-                
-                <div className="p-6 space-y-6">
-                    <div>
-                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Medicines Prescribed</h4>
-                        <ul className="space-y-3">
-                            {selectedPrescription.meds?.map((med, i) => (
-                                <li key={i} className="flex items-center gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                                    <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xs">{i+1}</div>
-                                    <span className="text-sm font-bold text-slate-700">{med}</span>
-                                </li>
-                            )) || <p className="text-sm text-slate-400 italic">No medicines recorded.</p>}
-                        </ul>
-                    </div>
-
-                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                        <h4 className="text-xs font-black text-blue-800 uppercase tracking-widest mb-2">Doctor's Note</h4>
-                        <p className="text-sm text-slate-600 leading-relaxed font-medium">{selectedPrescription.note || "No notes available."}</p>
-                    </div>
-
-                    <button className="w-full bg-[#00d0f1] text-[#192a56] py-3.5 rounded-xl font-bold text-sm hover:bg-cyan-400 transition-all flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20">
-                        <Download size={18} /> Download PDF
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
 
       {/* --- 2. INVOICE MODAL --- */}
       {selectedInvoice && (

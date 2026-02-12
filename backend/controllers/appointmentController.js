@@ -1,10 +1,10 @@
 const Doctor = require('../models/Doctor');
 const Appointment = require('../models/Appointment');
+const Transaction = require('../models/Transaction'); // 👈 Import Transaction Model
 
-// @desc    Get all doctors (with optional search)
-// @route   GET /api/appointments/doctors
-
-exports.getLatestAppointment = async (req, res) => { // get appointment details 
+// @desc    Get details of the most recent appointment
+// @route   GET /api/appointments/latest
+exports.getLatestAppointment = async (req, res) => { 
     try {
         const userId = req.user.id;
 
@@ -22,7 +22,9 @@ exports.getLatestAppointment = async (req, res) => { // get appointment details
     }
 };
 
-exports.getDoctors = async (req, res) => { // get doctors detailed 
+// @desc    Get all doctors (with optional search)
+// @route   GET /api/appointments/doctors
+exports.getDoctors = async (req, res) => { 
     try {
         const { speciality } = req.query;
         let query = {};
@@ -39,19 +41,21 @@ exports.getDoctors = async (req, res) => { // get doctors detailed
     }
 };
 
-// @desc    Create new appointment
+// @desc    Create new appointment & Generate Transaction
 // @route   POST /api/appointments
 exports.createAppointment = async (req, res) => {
     try {
         const userId = req.user.id;
-        // Frontend se "formData" aa raha hai jisme medicalReport (base64) hai
         const { doctor, formData, bookingType } = req.body; 
 
+        // 1. Create the Appointment
         const appointment = await Appointment.create({
             user: userId,
             
-            // Doctor Info
-            doctorId: doctor._id,
+            // ✅ Fix: Use 'doctor' instead of 'doctorId' to match Schema
+            doctor: doctor._id, 
+            
+            // Snapshot Data
             doctorName: doctor.name,
             speciality: doctor.speciality,
             doctorImg: doctor.img,
@@ -69,21 +73,57 @@ exports.createAppointment = async (req, res) => {
             // Appointment Details
             problem: formData.problem,
             symptoms: formData.symptoms,
-            
-            // ✅ YE LINE CHECK KARO: Data yahan save ho raha hai
-            medicalReport: formData.medicalReport, 
+            medicalReport: formData.medicalReport, // ✅ Saves Base64 string
 
             date: formData.date,
             day: formData.day,
             time: formData.time,
             
+            status: 'Scheduled',
             paymentStatus: 'Paid'
         });
 
+        // 2. ✅ AUTOMATICALLY CREATE TRANSACTION
+        // This ensures the amount shows in "Total Spent" and "Transaction History"
+        await Transaction.create({
+            user: userId,
+            invoiceId: `INV-${Date.now()}`, // Generate unique ID
+            doctorName: doctor.name,
+            service: doctor.speciality || "Consultation",
+            amount: doctor.fee,
+            status: 'Paid', // Marked as Paid so it counts in Total Spent
+            method: 'Credit Card •••• 4242', // Default method for now
+            date: new Date()
+        });
+
         res.status(201).json(appointment);
+
     } catch (error) {
-        console.error("Booking Error:", error); // Error print karwana debugging ke liye
+        console.error("Booking Error:", error); 
         res.status(500).json({ message: 'Booking failed: ' + error.message });
+    }
+};
+
+// @desc    Get all appointments for the logged-in user
+// @route   GET /api/appointments/my-history
+exports.getUserAppointments = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // Fetch appointments and sort by most recent first
+        // ✅ Populating 'doctor' works now because we fixed the field name in createAppointment
+        const appointments = await Appointment.find({ user: userId })
+            .populate('doctor', 'name speciality image fee') 
+            .sort({ date: -1, time: -1 });
+
+        if (!appointments) {
+            return res.status(404).json({ message: 'No appointments found' });
+        }
+
+        res.json(appointments);
+    } catch (error) {
+        console.error("Error fetching history:", error);
+        res.status(500).json({ message: 'Server Error' });
     }
 };
 
@@ -107,5 +147,3 @@ exports.seedDoctors = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
-
-

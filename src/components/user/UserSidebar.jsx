@@ -37,11 +37,9 @@ const UserSidebar = ({ closeSidebar }) => {
 
   // --- LOGOUT FUNCTION ---
   const handleLogout = () => {
-    if(window.confirm("Are you sure you want to Logout?")) {
-        localStorage.removeItem('userProfile');
-        window.location.reload(); 
-    }
+    navigate('/'); 
   };
+
 
   return (
     <div className="h-full flex flex-col bg-[#192a56] text-white">
@@ -117,14 +115,14 @@ const UserSidebar = ({ closeSidebar }) => {
       </nav>
 
       {/* Logout Button */}
-      <div className="p-4 border-t border-white/10 shrink-0">
-        <button 
-            onClick={handleLogout} 
-            className="flex items-center gap-3 px-4 py-3 w-full rounded-xl text-red-400 hover:bg-red-500/10 transition-colors font-bold"
-        >
-          <LogOut size={20} /> Logout
-        </button>
-      </div>
+<div className="p-4 border-t border-white/10 bg-[#152347] shrink-0">
+          <button 
+            onClick={handleLogout}
+            className="flex items-center justify-center gap-3 w-full px-4 py-3 text-sm font-bold text-red-400 hover:bg-red-500/10 hover:text-red-300 rounded-xl transition-all duration-200"
+          >
+            <LogOut size={18} /> <span className="truncate">Sign Out</span>
+          </button>
+        </div>
 
     </div>
   );

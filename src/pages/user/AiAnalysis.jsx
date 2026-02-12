@@ -2,66 +2,91 @@ import React, { useState, useRef, useEffect } from 'react';
 import UserSidebar from '../../components/user/UserSidebar'; 
 import { 
   Menu, Bell, Upload, FileText, Send, Bot, User, 
-  CheckCircle, Activity, ChevronRight, Layout, X, Stethoscope, Dog, ShieldAlert, ScanLine,
-  Clock, MoreHorizontal, Sparkles // Added Sparkles here
+  Activity, ChevronRight, Layout, X, Stethoscope, Dog, ShieldAlert, ScanLine,
+  Clock, MoreHorizontal, Sparkles
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const AiAnalysis = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(true); 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [inputText, setInputText] = useState("");
+  const [messages, setMessages] = useState([]); 
   const messagesEndRef = useRef(null);
-
-  // --- USER DATA ---
-  const userName = "Vinay"; 
+  const navigate = useNavigate();
 
   // --- MOCK HISTORY ---
   const historyItems = [
-    { id: 1, title: "Blood Count Report", date: "Yesterday" },
-    { id: 2, title: "Chest X-Ray Analysis", date: "2 Oct 2023" },
+    { id: 1, title: "Blood Count Analysis", date: "Yesterday" },
   ];
-
-  const [messages, setMessages] = useState([]); 
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isAnalyzing]);
 
-  // --- FAKE API FUNCTION (UPDATED TO SAVE TO DASHBOARD) ---
-  const fetchAiResponse = async (userInput, type = 'text') => {
+  // --- 🟢 REAL API FUNCTION (Google Gemini) ---
+  const fetchAiResponse = async (userInput, fileData = null) => {
     setIsAnalyzing(true);
+    
+    // Get Login Token
+    const storedData = JSON.parse(localStorage.getItem('user_token'));
+    if(!storedData) {
+        navigate('/login');
+        return;
+    }
 
-    setTimeout(() => {
-      // Logic: Agar user "report" ya "x-ray" bolega, toh AI medical report generate karega
-      if (type === 'report' || userInput.toLowerCase().includes('report') || userInput.toLowerCase().includes('x-ray')) {
-        
-        // 1. Create the Report Data Object
-        const analysisResult = {
-          id: Date.now(), // Unique ID
-          disease: "Mild Bronchitis (Viral)", 
-          confidence: "94%", 
-          severity: "Moderate",
-          symptoms: ["Wheezing", "Dry Cough", "Fatigue"],
-          findings: "Bronchial wall thickening observed. No fluid in lungs.",
-          doctorType: "Pulmonologist",
-          date: new Date().toLocaleDateString(), // Today's Date
-          status: "Pending Action"
-        };
+    try {
+        const response = await fetch('http://localhost:5000/api/ai/analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${storedData.token}`
+            },
+            body: JSON.stringify({
+                prompt: userInput,
+                imageBase64: fileData // Sends image to backend
+            })
+        });
 
-        // 2. SAVE TO LOCAL STORAGE (This sends data to Dashboard)
-        const existingReports = JSON.parse(localStorage.getItem('dashboardReports')) || [];
-        localStorage.setItem('dashboardReports', JSON.stringify([analysisResult, ...existingReports]));
+        const data = await response.json();
 
-        // 3. Show in Chat
-        addMessage('ai', null, 'report', analysisResult);
+        if (response.ok) {
+            // 1. Format Data
+            const analysisResult = {
+                id: Date.now(),
+                disease: data.disease || "General Query",
+                confidence: data.confidence || "N/A",
+                severity: data.severity || "Low",
+                symptoms: data.symptoms || [],
+                findings: data.findings || "Analysis complete.",
+                doctorType: data.doctorType || "General Physician",
+                date: new Date().toLocaleDateString(),
+                status: "Pending Action"
+            };
 
-      } else {
-        addMessage('ai', "Based on your symptoms, it sounds like a seasonal viral infection. Please keep hydrated and monitor your temperature. If fever persists > 3 days, consult a doctor.");
-      }
-      setIsAnalyzing(false);
-    }, 2000); 
+            // 2. Save to Dashboard
+            const existingReports = JSON.parse(localStorage.getItem('dashboardReports')) || [];
+            localStorage.setItem('dashboardReports', JSON.stringify([analysisResult, ...existingReports]));
+
+            // 3. Show in Chat
+            addMessage('ai', null, 'report', analysisResult);
+        } else {
+            // Handle Errors (Like 401 Auth or 500 Server)
+            if (response.status === 401) {
+                addMessage('ai', "Session expired. Please log in again.");
+                navigate('/login');
+            } else {
+                addMessage('ai', "I'm having trouble connecting to the server. Please try again.");
+            }
+        }
+
+    } catch (error) {
+        console.error("Network Error:", error);
+        addMessage('ai', "Server unreachable. Is the backend running?");
+    } finally {
+        setIsAnalyzing(false);
+    }
   };
 
   // --- HANDLERS ---
@@ -74,13 +99,23 @@ const AiAnalysis = () => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const userMsg = {
-      id: Date.now(), sender: 'user', type: 'file', 
-      fileName: file.name, fileSize: (file.size / 1024).toFixed(2) + " KB", 
-      time: getCurrentTime()
+    // Convert to Base64 for Backend
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onloadend = () => {
+        const base64Data = reader.result;
+        
+        // Show in chat
+        const userMsg = {
+            id: Date.now(), sender: 'user', type: 'file', 
+            fileName: file.name, fileSize: (file.size / 1024).toFixed(2) + " KB", 
+            time: getCurrentTime()
+        };
+        setMessages(prev => [...prev, userMsg]);
+
+        // Send to AI
+        fetchAiResponse("Analyze this medical document.", base64Data);
     };
-    setMessages(prev => [...prev, userMsg]);
-    fetchAiResponse("Analyze this report", 'report');
   };
 
   const handleSendMessage = (e) => {
@@ -138,7 +173,7 @@ const AiAnalysis = () => {
                                 <Bot size={48} className="text-[#192a56]" />
                                 <span className="absolute bottom-1 right-1 w-5 h-5 bg-emerald-500 rounded-full border-4 border-white animate-pulse"></span>
                             </div>
-                            <h1 className="text-3xl font-black text-slate-800 mb-2">Welcome, {userName}! 👋</h1>
+                            <h1 className="text-3xl font-black text-slate-800 mb-2">Welcome! 👋</h1>
                             <p className="text-slate-500 text-lg max-w-lg mx-auto">I'm your personal health assistant. Upload a medical report or describe your symptoms to get started.</p>
                         </div>
 
@@ -149,13 +184,13 @@ const AiAnalysis = () => {
                                 <p className="text-xs text-slate-500 mt-1">Upload Lab Reports, X-Rays or Prescriptions.</p>
                             </div>
 
-                            <div onClick={() => handleQuickPrompt("I have a severe headache")} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-emerald-300 transition-all cursor-pointer group text-left">
+                            <div onClick={() => handleQuickPrompt("I have a severe headache and fever")} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-emerald-300 transition-all cursor-pointer group text-left">
                                 <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform"><Stethoscope size={20} /></div>
                                 <h3 className="font-bold text-slate-800 text-sm">Symptom Checker</h3>
                                 <p className="text-xs text-slate-500 mt-1">Describe feelings to get potential diagnosis.</p>
                             </div>
 
-                            <div onClick={() => handleQuickPrompt("My dog is not eating")} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-orange-300 transition-all cursor-pointer group text-left">
+                            <div onClick={() => handleQuickPrompt("My dog is not eating and sleeping a lot")} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-lg hover:border-orange-300 transition-all cursor-pointer group text-left">
                                 <div className="w-10 h-10 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform"><Dog size={20} /></div>
                                 <h3 className="font-bold text-slate-800 text-sm">Pet Health</h3>
                                 <p className="text-xs text-slate-500 mt-1">Veterinary advice for your furry friends.</p>
@@ -184,7 +219,7 @@ const AiAnalysis = () => {
                                 {msg.type === 'file' && (
                                     <div className="bg-white p-4 rounded-2xl rounded-tr-sm border border-slate-200 shadow-sm flex items-center gap-4 min-w-[280px]">
                                         <div className="w-10 h-10 bg-red-50 text-red-500 rounded-xl flex items-center justify-center border border-red-100"><FileText size={20} /></div>
-                                        <div className="flex-1 min-w-0"><p className="text-sm font-bold text-slate-800 truncate">{msg.fileName}</p><p className="text-[10px] text-slate-400 font-medium">{msg.fileSize}</p></div><CheckCircle size={18} className="text-emerald-500" />
+                                        <div className="flex-1 min-w-0"><p className="text-sm font-bold text-slate-800 truncate">{msg.fileName}</p><p className="text-[10px] text-slate-400 font-medium">{msg.fileSize}</p></div><Activity size={18} className="text-emerald-500 animate-pulse" />
                                     </div>
                                 )}
 
@@ -203,7 +238,7 @@ const AiAnalysis = () => {
                                             <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
                                                 <p className="text-xs font-bold text-blue-900 mb-2 flex items-center gap-2"><FileText size={12}/> Analysis Summary</p>
                                                 <p className="text-xs text-slate-600 leading-relaxed">{msg.data.findings}</p>
-                                                <div className="mt-3 flex flex-wrap gap-2">{msg.data.symptoms.map((sym, i) => (<span key={i} className="text-[10px] bg-white border border-slate-200 px-2 py-1 rounded-md text-slate-500 font-medium">{sym}</span>))}</div>
+                                                {msg.data.symptoms && <div className="mt-3 flex flex-wrap gap-2">{msg.data.symptoms.map((sym, i) => (<span key={i} className="text-[10px] bg-white border border-slate-200 px-2 py-1 rounded-md text-slate-500 font-medium">{sym}</span>))}</div>}
                                             </div>
                                             <div className="pt-2">
                                                 <Link to="/user/book-appointment" className="w-full bg-[#192a56] hover:bg-blue-900 text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-900/10">Consult {msg.data.doctorType} <ChevronRight size={16} /></Link>
@@ -239,7 +274,7 @@ const AiAnalysis = () => {
                         <div className="relative group">
                             <label className="w-10 h-10 bg-white hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-xl flex items-center justify-center cursor-pointer transition-all border border-slate-200 shadow-sm">
                                 <Upload size={18} />
-                                <input type="file" className="hidden" accept="image/*,.pdf" onChange={handleFileUpload} />
+                                <input type="file" className="hidden" accept="image/*" onChange={handleFileUpload} />
                             </label>
                         </div>
                         <input type="text" value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Type a message or upload a report..." className="flex-1 bg-transparent outline-none text-sm text-slate-700 font-medium placeholder-slate-400 py-2.5 px-2" />
@@ -267,14 +302,6 @@ const AiAnalysis = () => {
                         </div>
                     ))}
                     <button className="w-full mt-4 py-3 border border-dashed border-slate-300 rounded-xl text-xs font-bold text-slate-400 hover:text-slate-600 hover:border-slate-400 transition-all flex items-center justify-center gap-2">+ Start New Chat</button>
-                </div>
-                <div className="p-4 border-t border-slate-100 bg-slate-50">
-                    <div className="bg-[#192a56] rounded-xl p-4 text-white relative overflow-hidden">
-                        <div className="absolute -right-2 -top-2 bg-[#00d0f1] w-12 h-12 rounded-full blur-xl opacity-30"></div>
-                        <p className="text-xs font-bold mb-1">Upgrade to Pro</p>
-                        <p className="text-[10px] text-blue-200 mb-3">Get unlimited AI analysis & priority doctor support.</p>
-                        <button className="w-full bg-white text-[#192a56] py-2 rounded-lg text-[10px] font-black hover:bg-blue-50 transition-colors">Upgrade Now</button>
-                    </div>
                 </div>
             </div>
         </div>

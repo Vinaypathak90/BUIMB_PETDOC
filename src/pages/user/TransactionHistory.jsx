@@ -1,53 +1,160 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import UserSidebar from '../../components/user/UserSidebar'; 
 import { 
   Menu, Bell, Search, Filter, Download, FileText, 
   CreditCard, ArrowUpRight, ArrowDownLeft, Wallet, 
-  CheckCircle, Clock, RotateCcw, MoreHorizontal, ShieldCheck
+  CheckCircle, Clock, RotateCcw, MoreHorizontal, ShieldCheck, Loader2
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 const TransactionHistory = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [filter, setFilter] = useState('all'); // all, paid, pending, refunded
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // --- STATE FOR REAL DATA ---
+  const [transactions, setTransactions] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  const navigate = useNavigate();
 
-  // --- MOCK TRANSACTION DATA ---
-  const transactions = [
-    { 
-      id: "INV-2024-001", doctor: "Dr. Ruby Perrin", service: "Dental Checkup", 
-      date: "12 Feb 2026", time: "10:30 AM", amount: 500, status: "Paid", method: "Credit Card •••• 4242"
-    },
-    { 
-      id: "INV-2024-002", doctor: "Dr. Darren Elder", service: "Pet Surgery (Bruno)", 
-      date: "10 Feb 2026", time: "02:15 PM", amount: 1200, status: "Pending", method: "Pay on Visit"
-    },
-    { 
-      id: "INV-2024-003", doctor: "Dr. Sofia Brient", service: "Cardiology", 
-      date: "05 Feb 2026", time: "09:00 AM", amount: 1500, status: "Refunded", method: "Wallet"
-    },
-    { 
-      id: "INV-2024-004", doctor: "Dr. Marvin Campbell", service: "Pet Vaccination", 
-      date: "01 Feb 2026", time: "04:45 PM", amount: 350, status: "Paid", method: "UPI"
-    },
-    { 
-      id: "INV-2024-005", doctor: "Dr. John Doe", service: "General Physician", 
-      date: "28 Jan 2026", time: "11:00 AM", amount: 600, status: "Paid", method: "Credit Card •••• 4242"
-    }
-  ];
+  // --- FETCH REAL DATA FROM BACKEND ---
+  useEffect(() => {
+    const fetchTransactions = async () => {
+        const storedData = JSON.parse(localStorage.getItem('user_token'));
+        if (!storedData) {
+            navigate('/login');
+            return;
+        }
+
+        try {
+            const res = await fetch('http://localhost:5000/api/transactions/my-history', {
+                headers: { 'Authorization': `Bearer ${storedData.token}` }
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+                
+                // Format data for UI
+                const formattedData = data.map(t => {
+                    // Safe Date Parsing
+                    const txDate = t.date ? new Date(t.date) : new Date();
+                    
+                    return {
+                        id: t.invoiceId || (t._id ? t._id.substr(-8).toUpperCase() : "UNKNOWN"),
+                        doctor: t.doctorName || "Unknown Doctor",
+                        service: t.service || "General Service",
+                        date: txDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                        time: txDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        amount: t.amount || 0,
+                        status: t.status || "Pending",
+                        method: t.method || "Cash"
+                    };
+                });
+                
+                setTransactions(formattedData);
+            }
+        } catch (error) {
+            console.error("Error fetching transactions:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    fetchTransactions();
+  }, [navigate]);
 
   // --- CALCULATE STATS ---
-  const totalSpent = transactions.filter(t => t.status === 'Paid').reduce((acc, curr) => acc + curr.amount, 0);
-  const totalPending = transactions.filter(t => t.status === 'Pending').reduce((acc, curr) => acc + curr.amount, 0);
-  const totalRefunded = transactions.filter(t => t.status === 'Refunded').reduce((acc, curr) => acc + curr.amount, 0);
+  const totalSpent = transactions
+    .filter(t => t.status.toLowerCase() === 'paid')
+    .reduce((acc, curr) => acc + curr.amount, 0);
 
+  const totalPending = transactions
+    .filter(t => t.status.toLowerCase() === 'pending')
+    .reduce((acc, curr) => acc + curr.amount, 0);
+  
   // --- FILTER LOGIC ---
   const filteredTransactions = transactions.filter(t => {
-    const matchesFilter = filter === 'all' ? true : t.status.toLowerCase() === filter;
-    const matchesSearch = t.doctor.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          t.service.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          t.id.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesFilter && matchesSearch;
+    // 1. Filter by Tab (Status) - Case Insensitive
+    const statusMatch = filter === 'all' 
+        ? true 
+        : t.status.toLowerCase() === filter.toLowerCase();
+    
+    // 2. Filter by Search Term
+    const searchLower = searchTerm.toLowerCase();
+    const searchMatch = (t.doctor && t.doctor.toLowerCase().includes(searchLower)) || 
+                        (t.service && t.service.toLowerCase().includes(searchLower)) ||
+                        (t.id && t.id.toLowerCase().includes(searchLower));
+                        
+    return statusMatch && searchMatch;
   });
+
+  // --- DOWNLOAD PDF FUNCTION ---
+const handleDownloadInvoice = (txn) => {
+    const doc = new jsPDF();
+
+    // -- Header --
+    doc.setFillColor(25, 42, 86);
+    doc.rect(0, 0, 210, 40, 'F');
+    
+    doc.setFontSize(22);
+    doc.setTextColor(255, 255, 255);
+    doc.text("PetDoc Invoice", 14, 25);
+    
+    doc.setFontSize(10);
+    doc.text("Original Receipt", 170, 25);
+
+    // -- Invoice Details --
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.text(`Invoice ID: ${txn.id}`, 14, 50);
+    doc.text(`Date: ${txn.date} at ${txn.time}`, 14, 56);
+    doc.text(`Status: ${txn.status}`, 14, 62);
+
+    // -- Table (UPDATED SYNTAX) --
+    autoTable(doc, {  // 👈 CHANGED: Use the imported function
+      startY: 70,
+      head: [['Description', 'Doctor / Service', 'Payment Method', 'Amount']],
+      body: [
+        ['Medical Service', txn.doctor, txn.method, `Rs. ${txn.amount}`]
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [25, 42, 86] },
+      styles: { fontSize: 10, cellPadding: 3 }
+    });
+
+    // -- Footer Total --
+    // Check if lastAutoTable exists safely
+    const finalY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 10 : 120;
+    
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text(`Total Paid: Rs. ${txn.amount}/-`, 140, finalY);
+
+    // -- Footer Note --
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(150);
+    doc.text("Thank you for choosing PetDoc. This is a computer-generated invoice.", 14, 280);
+
+    // Save File
+    doc.save(`Invoice_${txn.id}.pdf`);
+  };
+
+  // --- LOADING STATE ---
+  if (isLoading) {
+      return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+              <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center animate-in fade-in zoom-in duration-300">
+                  <Loader2 size={40} className="text-[#192a56] animate-spin mb-4" />
+                  <h3 className="text-lg font-black text-slate-800">Loading Transactions...</h3>
+                  <p className="text-slate-400 text-xs font-medium mt-1">Fetching your financial history securely</p>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <div className="bg-slate-50 min-h-screen relative font-sans">
@@ -188,18 +295,22 @@ const TransactionHistory = () => {
                                         </td>
                                         <td className="px-6 py-4">
                                             <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
-                                                t.status === 'Paid' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                                                t.status === 'Pending' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                                                t.status.toLowerCase() === 'paid' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
+                                                t.status.toLowerCase() === 'pending' ? 'bg-amber-50 text-amber-600 border-amber-100' :
                                                 'bg-blue-50 text-blue-600 border-blue-100'
                                             }`}>
-                                                {t.status === 'Paid' && <CheckCircle size={12}/>}
-                                                {t.status === 'Pending' && <Clock size={12}/>}
-                                                {t.status === 'Refunded' && <RotateCcw size={12}/>}
+                                                {t.status.toLowerCase() === 'paid' && <CheckCircle size={12}/>}
+                                                {t.status.toLowerCase() === 'pending' && <Clock size={12}/>}
+                                                {t.status.toLowerCase() === 'refunded' && <RotateCcw size={12}/>}
                                                 {t.status}
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <button className="p-2 text-slate-400 hover:text-[#192a56] hover:bg-blue-50 rounded-lg transition-colors" title="Download Invoice">
+                                            <button 
+                                                onClick={() => handleDownloadInvoice(t)}
+                                                className="p-2 text-slate-400 hover:text-[#192a56] hover:bg-blue-50 rounded-lg transition-colors" 
+                                                title="Download Invoice"
+                                            >
                                                 <Download size={18} />
                                             </button>
                                         </td>

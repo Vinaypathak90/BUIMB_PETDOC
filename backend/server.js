@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const dotenv = require('dotenv');
 const cors = require('cors');
@@ -7,7 +8,8 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes'); 
-
+const aiRoutes = require('./routes/aiRoutes'); //
+const transactionRoutes = require('./routes/transactionRoutes');
 dotenv.config();
 connectDB(); // Connect to MongoDB
 
@@ -24,7 +26,9 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/appointments', appointmentRoutes); 
+app.use('/api/ai', aiRoutes); // 👈 Enable AI route
 
+app.use('/api/transactions', transactionRoutes);
 // Test Route
 app.get('/', (req, res) => {
     res.send('API is running...');

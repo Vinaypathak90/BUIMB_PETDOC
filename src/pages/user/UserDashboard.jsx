@@ -4,7 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { 
   Menu, Bell, User, MapPin, Mail, Phone, Calendar, 
   Edit3, Activity, Heart, Clock, Save, Globe, Flag, Droplet, ChevronDown,
-  CalendarPlus, Thermometer, Weight, ArrowRight, FileText
+  CalendarPlus, Thermometer, Weight, ArrowRight, FileText,Loader2
 } from 'lucide-react';
 
 const UserDashboard = () => {
@@ -167,15 +167,16 @@ const UserDashboard = () => {
     { label: "SpO2", value: healthVitals?.spo2 || "N/A", icon: Droplet, color: "text-cyan-500", bg: "bg-cyan-50" },
   ];
 
-  if (isLoading) {
-    return (
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-             <div className="flex flex-col items-center gap-3 animate-pulse">
-                <div className="w-10 h-10 border-4 border-[#192a56] border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-slate-500 font-bold">Loading your dashboard...</p>
-             </div>
-        </div>
-    );
+ if (isLoading) {
+      return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+              <div className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100 flex flex-col items-center animate-in fade-in zoom-in duration-300">
+                  <Loader2 size={40} className="text-[#00d0f1] animate-spin mb-4" />
+                  <h3 className="text-lg font-black text-slate-800">Loading Appointments...</h3>
+                  <p className="text-slate-400 text-xs font-medium mt-1">Fetching your medical history securely</p>
+              </div>
+          </div>
+      );
   }
 
   return (
