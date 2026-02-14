@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getDoctors, addDoctor, updateDoctor, deleteDoctor, getPatients, addPatient, updatePatient, deletePatient, getSpecialists, addSpecialist, updateSpecialist, deleteSpecialist, getAppointments, toggleAppointmentStatus,deleteAppointment,
-    getTransactions, deleteTransaction, addTransaction ,getDashboardTables} = require('../controllers/adminController');
+    getTransactions, deleteTransaction, addTransaction ,getDashboardTables,getDashboardStats} = require('../controllers/adminController');
 const protect = require('../middleware/authMiddleware');
 const adminOnly = require('../middleware/adminMiddleware');
 const { getSettings, updateSettings } = require('../controllers/adminController');
@@ -40,5 +40,8 @@ router.put('/settings', updateSettings);
 router.delete('/appointments/:id', deleteAppointment);
 // Dashboard Tables Route
 router.get('/dashboard-tables', protect, getDashboardTables);
+// Dashboard Stats Route
+router.get('/stats', protect, getDashboardStats);
+
 
 module.exports = router;
