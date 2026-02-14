@@ -217,6 +217,34 @@ exports.toggleAppointmentStatus = async (req, res) => {
         res.status(500).json({ message: "Update failed" });
     }
 };
+exports.deleteAppointment = async (req, res) => {
+    try {
+        const id = req.params.id;
+        console.log("🗑️ Attempting to delete Appointment ID:", id);
+
+        // Check if ID is valid (prevents server crash on bad IDs)
+        if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+            console.log("❌ Invalid ID format");
+            return res.status(400).json({ message: "Invalid ID format" });
+        }
+
+        // Find and Delete in one step
+        const deletedAppointment = await Appointment.findByIdAndDelete(id);
+
+        if (!deletedAppointment) {
+            console.log("⚠️ Appointment not found in Database");
+            return res.status(404).json({ message: "Appointment not found" });
+        }
+
+        console.log("✅ Appointment Deleted Successfully");
+        res.json({ message: "Appointment removed" });
+
+    } catch (error) {
+        console.error("🔥 Delete Error:", error);
+        res.status(500).json({ message: "Server Error", error: error.message });
+    }
+};
+
 // ==========================================
 // TRANSACTION CONTROLLERS
 // ==========================================
