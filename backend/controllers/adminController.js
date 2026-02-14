@@ -330,3 +330,56 @@ exports.updateSettings = async (req, res) => {
         res.status(400).json({ message: "Error updating settings", error: error.message });
     }
 };
+
+// @desc    Get Top Doctors and Recent Patients
+// @route   GET /api/admin/dashboard-tables
+exports.getDashboardTables = async (req, res) => {
+    try {
+        // 1. Fetch Top 5 Doctors (Sorted by Earnings)
+        const topDoctors = await Doctor.find()
+            .sort({ earned: -1 }) // Highest earning first
+            .limit(5);
+
+        // 2. Fetch Recent 5 Patients (Sorted by Last Visit)
+        const recentPatients = await Patient.find()
+            .sort({ lastVisit: -1 }) // Newest visit first
+            .limit(5);
+
+        res.json({
+            doctors: topDoctors,
+            patients: recentPatients
+        });
+
+    } catch (error) {
+        console.error("Dashboard Table Error:", error);
+        res.status(500).json({ message: "Error fetching dashboard data" });
+    }
+};
+// @desc    Get Key Stats for Admin Dashboard
+// @route   GET /api/admin/stats
+exports.getDashboardStats = async (req, res) => {
+    try {
+        // 1. Total Revenue (Sum of all 'credit' transactions with status 'Paid')
+        const revenueAgg = await Transaction.aggregate([
+            { $match: { flow: 'credit', status: 'Paid' } },
+            { $group: { _id: null, total: { $sum: "$amount" } } }
+        ]);
+        const totalRevenue = revenueAgg.length > 0 ? revenueAgg[0].total : 0;
+
+        // 2. Counts
+        const doctorCount = await Doctor.countDocuments();
+        const patientCount = await Patient.countDocuments();
+        const appointmentCount = await Appointment.countDocuments();
+
+        res.json({
+            revenue: totalRevenue,
+            doctors: doctorCount,
+            patients: patientCount,
+            appointments: appointmentCount
+        });
+
+    } catch (error) {
+        console.error("Stats Error:", error);
+        res.status(500).json({ message: "Error fetching dashboard stats" });
+    }
+};

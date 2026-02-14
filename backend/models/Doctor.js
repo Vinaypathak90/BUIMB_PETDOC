@@ -24,8 +24,13 @@ const doctorSchema = mongoose.Schema({
     },
     currentTask: { type: String, default: 'Available for Consult' },
     location: { type: String, default: 'OPD Cabin' },
-    nextFree: { type: String, default: 'Now' }
+    nextFree: { type: String, default: 'Now' },
+    // Stats for Dashboard
+    earned: { type: Number, default: 0 },
+    rating: { type: Number, default: 0 }, // 0 to 5
+    isVerified: { type: Boolean, default: true }
+},
 
-}, { timestamps: true });
+ { timestamps: true });
 
 module.exports = mongoose.model('Doctor', doctorSchema);
