@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import AdminSidebar from '../../components/admin/AdminSidebar'; 
 import AdminHeader from '../../components/admin/AdminHeader';
 import { 
@@ -17,21 +17,44 @@ const Transactions = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState("all"); // all, credit, debit
 
-  // --- DUMMY TRANSACTION DATA (2026) ---
-  const [transactions, setTransactions] = useState([
-    { id: 1, invoiceId: "#TRX-9901", name: "Charlene Reed", type: "Patient Fee", amount: 200, status: "paid", method: "Credit Card", date: "12 Jan 2026", flow: "credit" },
-    { id: 2, invoiceId: "#SAL-1001", name: "Dr. Ruby Perrin", type: "Doctor Salary", amount: 4500, status: "paid", method: "Bank Transfer", date: "30 Jan 2026", flow: "debit" },
-    { id: 3, invoiceId: "#TRX-9902", name: "Travis Trimble", type: "Pet Surgery Fee", amount: 850, status: "pending", method: "Insurance", date: "02 Feb 2026", flow: "credit" },
-    { id: 4, invoiceId: "#EXP-5021", name: "Medical Supplies Co.", type: "Equipment Purchase", amount: 1200, status: "paid", method: "Wire Transfer", date: "05 Feb 2026", flow: "debit" },
-    { id: 5, invoiceId: "#TRX-9903", name: "Carl Kelly", type: "Consultation", amount: 150, status: "paid", method: "Cash", date: "08 Feb 2026", flow: "credit" },
-    { id: 6, invoiceId: "#SAL-1002", name: "Dr. Darren Elder", type: "Doctor Salary", amount: 5000, status: "paid", method: "Bank Transfer", date: "28 Feb 2026", flow: "debit" },
-    { id: 7, invoiceId: "#TRX-9904", name: "Gina Moore", type: "Vaccination", amount: 80, status: "failed", method: "Card", date: "01 Mar 2026", flow: "credit" },
-    { id: 8, invoiceId: "#MNT-3001", name: "TechFix Solutions", type: "Server Maintenance", amount: 300, status: "pending", method: "PayPal", date: "05 Mar 2026", flow: "debit" },
-    { id: 9, invoiceId: "#TRX-9905", name: "Elsie Gilley", type: "Dental Cleaning", amount: 400, status: "paid", method: "Credit Card", date: "10 Mar 2026", flow: "credit" },
-    { id: 10, invoiceId: "#SAL-1003", name: "Nurse Sarah Connor", type: "Staff Salary", amount: 2500, status: "paid", method: "Bank Transfer", date: "30 Mar 2026", flow: "debit" },
-    { id: 11, invoiceId: "#TRX-9906", name: "Walter Roberson", type: "Pet Grooming", amount: 120, status: "paid", method: "Cash", date: "02 Apr 2026", flow: "credit" },
-    { id: 12, invoiceId: "#EXP-5022", name: "City Electricity Board", type: "Utility Bill", amount: 600, status: "paid", method: "Auto-Debit", date: "05 Apr 2026", flow: "debit" },
-  ]);
+  const [transactions, setTransactions] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      const storedData = JSON.parse(localStorage.getItem('user_token'));
+      if (!storedData || !storedData.token) { setIsLoading(false); return; }
+
+      try {
+        const res = await fetch('http://localhost:5000/api/transactions/my-history', {
+          headers: { 'Authorization': `Bearer ${storedData.token}` }
+        });
+        if (!res.ok) throw new Error('Failed to fetch');
+        const data = await res.json();
+
+        // Map backend transaction shape to UI shape
+        const mapped = data.map(t => ({
+          id: t._id,
+          invoiceId: t.invoiceId || `#${t._id.slice(-6).toUpperCase()}`,
+          name: t.doctorName || t.service || 'Unknown',
+          type: t.service || 'Transaction',
+          amount: t.amount || 0,
+          status: (t.status || '').toString().toLowerCase(),
+          method: t.method || 'N/A',
+          date: new Date(t.date).toLocaleDateString(),
+          flow: (t.status || '').toLowerCase() === 'paid' ? 'credit' : 'debit'
+        }));
+
+        setTransactions(mapped);
+      } catch (err) {
+        console.error('Error fetching transactions', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchTransactions();
+  }, []);
 
   // --- STATS CALCULATION ---
   const totalIncome = transactions.filter(t => t.flow === 'credit' && t.status === 'paid').reduce((acc, curr) => acc + curr.amount, 0);

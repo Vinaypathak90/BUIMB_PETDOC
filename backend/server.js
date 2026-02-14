@@ -10,6 +10,9 @@ const userRoutes = require('./routes/userRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes'); 
 const aiRoutes = require('./routes/aiRoutes'); //
 const transactionRoutes = require('./routes/transactionRoutes');
+
+const adminRoutes = require('./routes/adminRoutes');
+
 dotenv.config();
 connectDB(); // Connect to MongoDB
 
@@ -29,6 +32,8 @@ app.use('/api/appointments', appointmentRoutes);
 app.use('/api/ai', aiRoutes); // 👈 Enable AI route
 
 app.use('/api/transactions', transactionRoutes);
+app.use('/api/admin', adminRoutes);
+
 // Test Route
 app.get('/', (req, res) => {
     res.send('API is running...');

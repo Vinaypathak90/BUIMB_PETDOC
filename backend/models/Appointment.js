@@ -1,44 +1,42 @@
 const mongoose = require('mongoose');
 
 const appointmentSchema = mongoose.Schema({
-    // User who booked the appointment
-    user: { 
-        type: mongoose.Schema.Types.ObjectId, 
-        ref: 'User', 
-        required: true 
-    },
+    // User (Account Holder)
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     
-    // ✅ CHANGED 'doctorId' to 'doctor' so .populate('doctor') works!
-    doctor: { 
-        type: mongoose.Schema.Types.ObjectId, 
-        ref: 'Doctor',
-        required: true 
-    },
+    // ✅ LINK TO NEW PATIENT TABLE
+    patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient' }, 
 
-    // Snapshot Data (Saved in case doctor changes later)
+    // Doctor Details
+    doctorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' },
     doctorName: { type: String, required: true },
     speciality: { type: String },
     doctorImg: { type: String },
     fee: { type: Number },
 
-    // Patient Details
+    // Patient Snapshot Details (Appointment ke waqt jo data tha)
     patientName: { type: String, required: true },
     age: { type: String },
     gender: { type: String },
-    phone: { type: String },
+    
+    // ✅ NEW FIELDS FROM FORM
+    phone: { type: String, required: true }, // Added Phone
+    address: { type: String, required: true }, // Added Address
+    
     type: { type: String, enum: ['myself', 'pet', 'other'], required: true },
     
     // Pet Specific
     petName: { type: String },
     petType: { type: String },
 
-    // Appointment Details
+    // Medical Details
     problem: { type: String },
     symptoms: { type: String },
     
-    // ✅ ADDED AS REQUESTED
+    // ✅ Medical Report File (Base64 or URL)
     medicalReport: { type: String }, 
 
+    // Scheduling
     date: { type: String, required: true },
     day: { type: String },
     time: { type: String, required: true },

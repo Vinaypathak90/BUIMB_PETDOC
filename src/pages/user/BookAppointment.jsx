@@ -4,7 +4,7 @@ import UserSidebar from '../../components/user/UserSidebar';
 import { 
   User, Dog, Calendar, Clock, Search, FileText, X, CheckCircle, 
   ChevronDown, Stethoscope, CreditCard, ArrowLeft, Star, ShieldCheck,
-  CalendarDays, Upload, Activity
+  CalendarDays, Upload, Activity, MapPin, Phone
 } from 'lucide-react';
 
 const BookAppointment = () => {
@@ -14,18 +14,26 @@ const BookAppointment = () => {
   // --- STEPS STATE (1: Form, 2: Select Doctor, 3: Payment) ---
   const [step, setStep] = useState(1); 
   const [selectedDoctor, setSelectedDoctor] = useState(null);
-  const [doctorsList, setDoctorsList] = useState([]); // Fetch from DB
+  const [doctorsList, setDoctorsList] = useState([]); 
   const [loadingDoctors, setLoadingDoctors] = useState(false);
 
   // --- FORM STATE ---
-  const [bookingType, setBookingType] = useState('myself'); // myself, pet, other
+  const [bookingType, setBookingType] = useState('myself'); 
   const [formData, setFormData] = useState({
-    name: '', age: '', gender: 'Male', phone: '', 
-    problem: '', // Speciality
-    date: '', time: '', day: '',
-    symptoms: '', petType: 'Dog', petName: '',
-    medicalReport: '', // ✅ Base64 file string
-    fileName: ''       // ✅ To show in UI
+    name: '', 
+    age: '', 
+    gender: 'Male', 
+    phone: '',    // ✅ Phone Number field
+    address: '',  // ✅ Address field
+    problem: '', 
+    date: '', 
+    time: '', 
+    day: '',
+    symptoms: '', 
+    petType: 'Dog', 
+    petName: '',
+    medicalReport: '', 
+    fileName: ''      
   });
 
   // Autocomplete State
@@ -33,7 +41,6 @@ const BookAppointment = () => {
   const [filteredSpecs, setFilteredSpecs] = useState([]);
   const searchRef = useRef(null);
 
-  // Categories List
   const specialtiesList = [
     "Dentist", "Cardiology", "Urology", "Neurology", "Orthopedics", 
     "Pet Surgery", "Pet Orthopedics", "General Veterinary", "Dermatology",
@@ -42,9 +49,8 @@ const BookAppointment = () => {
 
   const petTypes = ["Dog", "Cat", "Bird", "Rabbit", "Fish"];
 
-  // --- INITIAL LOAD ---
+  // --- INITIAL LOAD & DATA FETCHING ---
   useEffect(() => {
-    // 1. Fetch Doctors from Backend
     const fetchDoctors = async () => {
         try {
             const res = await fetch('http://localhost:5000/api/appointments/doctors');
@@ -56,7 +62,6 @@ const BookAppointment = () => {
     };
     fetchDoctors();
 
-    // 2. Pre-fill user data
     const fetchProfile = async () => {
         const storedData = JSON.parse(localStorage.getItem('user_token'));
         if(storedData) {
@@ -66,25 +71,18 @@ const BookAppointment = () => {
                 });
                 const data = await res.json();
                 if(data.profile) {
-                    if (bookingType === 'myself') {
-                        setFormData(prev => ({
-                            ...prev, 
-                            name: data.profile.name || '', 
-                            phone: data.profile.phone || ''
-                        }));
-                    } else if (bookingType === 'pet') {
-                        setFormData(prev => ({
-                            ...prev, 
-                            name: data.profile.name || '' // Owner name
-                        }));
-                    }
+                    setFormData(prev => ({
+                        ...prev, 
+                        name: (bookingType === 'myself' || bookingType === 'pet') ? (data.profile.name || '') : '', 
+                        phone: data.profile.phone || '',
+                        address: data.profile.address || '' 
+                    }));
                 }
             } catch (err) { console.error(err); }
         }
     };
     fetchProfile();
 
-    // Click outside handler
     const handleClickOutside = (event) => {
       if (searchRef.current && !searchRef.current.contains(event.target)) setShowDropdown(false);
     };
@@ -93,12 +91,10 @@ const BookAppointment = () => {
   }, [bookingType]);
 
   // --- HANDLERS ---
-
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
 
-    // Auto-calculate Day
     if (name === 'date') {
         const d = new Date(value);
         const dayName = d.toLocaleDateString('en-US', { weekday: 'long' });
@@ -106,7 +102,6 @@ const BookAppointment = () => {
     }
   };
 
-  // Speciality Search Logic
   const handleSearchChange = (e) => {
     const val = e.target.value;
     setFormData({ ...formData, problem: val });
@@ -119,20 +114,16 @@ const BookAppointment = () => {
     setShowDropdown(false);
   };
 
-  // ✅ UPDATED FILE UPLOAD HANDLER (BASE64)
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-        // Validation: 5MB Limit
         if (file.size > 5 * 1024 * 1024) {
             alert("File is too large! Please upload under 5MB.");
             return;
         }
-
         const reader = new FileReader();
         reader.readAsDataURL(file);
         reader.onloadend = () => {
-            // Update state with Base64 string
             setFormData(prev => ({ 
                 ...prev, 
                 medicalReport: reader.result, 
@@ -143,11 +134,11 @@ const BookAppointment = () => {
     }
   };
 
-  // STEP NAVIGATION
   const handleFindDoctors = (e) => {
     e.preventDefault();
-    if (!formData.problem || !formData.date || !formData.time) {
-      alert("Please select Speciality, Date and Time to proceed.");
+    // ✅ Form Validation (Ensuring all fields including Phone & Address are filled)
+    if (!formData.phone || !formData.address || !formData.problem || !formData.date || !formData.time) {
+      alert("Please fill all details including Phone Number and Address.");
       return;
     }
     setStep(2);
@@ -158,7 +149,6 @@ const BookAppointment = () => {
     setStep(3);
   };
 
-  // FINAL PAYMENT & BOOKING
   const handlePayment = async () => {
     const storedData = JSON.parse(localStorage.getItem('user_token'));
     if(!storedData) {
@@ -176,7 +166,7 @@ const BookAppointment = () => {
             },
             body: JSON.stringify({
                 doctor: selectedDoctor,
-                formData: formData, // Contains medicalReport as Base64
+                formData: formData, 
                 bookingType: bookingType
             })
         });
@@ -193,7 +183,6 @@ const BookAppointment = () => {
     }
   };
 
-  // Filter Doctors based on selection
   const matchingDoctors = doctorsList.filter(doc => 
     doc.speciality.toLowerCase().includes(formData.problem.toLowerCase()) || 
     (formData.problem.toLowerCase().includes("pet") && doc.speciality.toLowerCase().includes("pet")) ||
@@ -201,7 +190,8 @@ const BookAppointment = () => {
   );
 
   return (
-    <div className="bg-slate-50 min-h-screen relative font-sans">
+    <div className="bg-slate-50 min-h-screen relative font-sans text-slate-900">
+      {/* Sidebar Overlay for Mobile */}
       <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-[#192a56] transform transition-transform duration-300 lg:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
          <UserSidebar closeSidebar={() => setIsSidebarOpen(false)} />
       </div>
@@ -210,10 +200,10 @@ const BookAppointment = () => {
         {/* Header */}
         <header className="bg-white/80 backdrop-blur-md sticky top-0 z-40 border-b border-slate-200 h-20 px-8 flex items-center justify-between">
             <div className="flex items-center gap-4">
-                {step > 1 && <button onClick={() => setStep(step - 1)} className="p-2 hover:bg-slate-100 rounded-full"><ArrowLeft size={20}/></button>}
+                {step > 1 && <button onClick={() => setStep(step - 1)} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><ArrowLeft size={20}/></button>}
                 <div>
                     <h2 className="text-xl font-black text-slate-800">
-                        {step === 1 ? 'Book Appointment' : step === 2 ? 'Select Doctor' : 'Secure Payment'}
+                        {step === 1 ? 'Patient Details' : step === 2 ? 'Available Specialists' : 'Secure Payment'}
                     </h2>
                     <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Step {step} of 3</p>
                 </div>
@@ -222,15 +212,16 @@ const BookAppointment = () => {
         
         <main className="p-8 max-w-5xl mx-auto">
           
-          {/* --- STEP 1: DETAILS & SCHEDULING --- */}
+          {/* --- STEP 1: PATIENT INFO & ADDRESS --- */}
           {step === 1 && (
             <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200 p-8 animate-in slide-in-from-right-8 duration-300">
                 
-                {/* Booking Type Toggle */}
+                {/* Booking Type Switcher */}
                 <div className="flex justify-center gap-2 mb-8 bg-slate-100 w-fit mx-auto p-1 rounded-full">
                     {['myself', 'pet', 'other'].map((type) => (
                         <button 
                             key={type}
+                            type="button"
                             onClick={() => setBookingType(type)}
                             className={`px-6 py-2 rounded-full font-bold text-sm capitalize transition-all ${
                                 bookingType === type 
@@ -246,31 +237,65 @@ const BookAppointment = () => {
                 <form onSubmit={handleFindDoctors} className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         
-                        {/* Dynamic Patient Details */}
+                        {/* Dynamic Patient Fields */}
                         {bookingType === 'pet' ? (
                             <>
-                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pet Name</label><input type="text" name="petName" required value={formData.petName} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 focus:border-[#00d0f1] outline-none" placeholder="Bruno" /></div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pet Name</label>
+                                    <input type="text" name="petName" required value={formData.petName} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 focus:border-[#00d0f1] focus:ring-1 focus:ring-[#00d0f1] outline-none transition-all" placeholder="e.g. Bruno" />
+                                </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pet Type</label>
-                                    <select name="petType" value={formData.petType} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 bg-white">
+                                    <select name="petType" value={formData.petType} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 bg-white outline-none focus:border-[#00d0f1]">
                                         {petTypes.map(t => <option key={t}>{t}</option>)}
                                     </select>
                                 </div>
                             </>
                         ) : (
                             <>
-                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Patient Name</label><input type="text" name="name" required value={formData.name} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 focus:border-[#00d0f1] outline-none" placeholder="Full Name" /></div>
-                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Age</label><input type="number" name="age" required value={formData.age} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 focus:border-[#00d0f1] outline-none" placeholder="25" /></div>
-                                <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Gender</label><select name="gender" value={formData.gender} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700"><option>Male</option><option>Female</option><option>Other</option></select></div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Patient Name</label>
+                                    <input type="text" name="name" required value={formData.name} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 focus:border-[#00d0f1] focus:ring-1 focus:ring-[#00d0f1] outline-none transition-all" placeholder="Full Legal Name" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Age</label>
+                                        <input type="number" name="age" required value={formData.age} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 focus:border-[#00d0f1] outline-none" placeholder="Age" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Gender</label>
+                                        <select name="gender" value={formData.gender} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 outline-none focus:border-[#00d0f1]">
+                                            <option>Male</option>
+                                            <option>Female</option>
+                                            <option>Other</option>
+                                        </select>
+                                    </div>
+                                </div>
                             </>
                         )}
+
+                        {/* Phone Number Field - ✅ ADDED */}
+                        <div className="md:col-span-1">
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                                <Phone size={14}/> Phone Number
+                            </label>
+                            <input 
+                                type="tel" 
+                                name="phone" 
+                                required 
+                                value={formData.phone} 
+                                onChange={handleInputChange} 
+                                className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 focus:border-[#00d0f1] outline-none transition-all" 
+                                placeholder="+91 00000 00000" 
+                            />
+                        </div>
 
                         {/* Speciality Search */}
                         <div className="relative" ref={searchRef}>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Looking For (Specialist)</label>
                             <div className="relative">
                                 <Search size={18} className="absolute top-3.5 left-3 text-slate-400"/>
-                                <input type="text" name="problem" value={formData.problem} onChange={handleSearchChange} onFocus={() => setShowDropdown(true)} required className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-3 font-bold text-slate-700 focus:border-[#00d0f1] outline-none" placeholder="e.g. Dentist, Pet Surgery" autoComplete="off" />
+                                <input type="text" name="problem" value={formData.problem} onChange={handleSearchChange} onFocus={() => setShowDropdown(true)} required className="w-full border border-slate-300 rounded-xl pl-10 pr-4 py-3 font-bold text-slate-700 focus:border-[#00d0f1] outline-none transition-all" placeholder="e.g. Dentist, Cardiology" autoComplete="off" />
                             </div>
                             {showDropdown && filteredSpecs.length > 0 && (
                                 <ul className="absolute z-10 w-full bg-white border border-slate-200 rounded-xl shadow-xl mt-1 max-h-40 overflow-y-auto">
@@ -281,59 +306,72 @@ const BookAppointment = () => {
                             )}
                         </div>
 
+                        {/* Address Field - ✅ ADDED */}
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                                <MapPin size={14}/> Complete Residential Address
+                            </label>
+                            <textarea 
+                                name="address" 
+                                required 
+                                rows="2"
+                                value={formData.address} 
+                                onChange={handleInputChange} 
+                                className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 focus:border-[#00d0f1] outline-none transition-all resize-none" 
+                                placeholder="Street Name, Landmark, City, Pincode"
+                            ></textarea>
+                        </div>
+
                         {/* Symptoms */}
                         <div className="md:col-span-2">
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Current Symptoms</label>
-                            <input type="text" name="symptoms" value={formData.symptoms} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 focus:border-[#00d0f1] outline-none" placeholder="e.g. Fever, Toothache, Limping" />
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Brief Symptoms</label>
+                            <input type="text" name="symptoms" value={formData.symptoms} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 focus:border-[#00d0f1] outline-none" placeholder="e.g. Fever from 2 days, Back pain" />
                         </div>
 
                         {/* Report Upload */}
                         <div className="md:col-span-2 bg-blue-50/50 border border-dashed border-blue-200 rounded-xl p-4 flex flex-col md:flex-row items-center gap-4">
                             <div className="flex-1">
-                                <p className="text-sm font-bold text-blue-900">Upload Medical Report</p>
-                                <p className="text-xs text-blue-500">AI will analyze this for the doctor.</p>
+                                <p className="text-sm font-bold text-blue-900">Upload Old Medical Report (Optional)</p>
+                                <p className="text-xs text-blue-500">Max size 5MB. Formats: PDF, JPG, PNG.</p>
                             </div>
                             <label className="cursor-pointer bg-white text-blue-600 px-4 py-2 rounded-lg font-bold shadow-sm border border-blue-100 flex items-center gap-2 hover:bg-blue-50 transition-all">
                                 <Upload size={16} /> 
-                                {formData.fileName ? formData.fileName.substring(0, 15) + '...' : 'Upload File'}
+                                {formData.fileName ? formData.fileName.substring(0, 12) + '...' : 'Select File'}
                                 <input type="file" className="hidden" accept="image/*,.pdf" onChange={handleFileChange} />
                             </label>
                         </div>
 
                         {/* Scheduling Section */}
                         <div className="md:col-span-2 bg-slate-50 p-6 rounded-2xl border border-slate-200">
-                            <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><CalendarDays size={18}/> Schedule Visit</h4>
+                            <h4 className="font-bold text-slate-800 mb-4 flex items-center gap-2 font-black uppercase text-xs tracking-widest"><CalendarDays size={18} className="text-[#00d0f1]"/> Appointment Slot</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date</label>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Date</label>
                                     <input type="date" name="date" required value={formData.date} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 bg-white focus:border-[#00d0f1] outline-none" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Preferred Time</label>
+                                    <label className="block text-xs font-bold text-slate-500 mb-1">Time</label>
                                     <input type="time" name="time" required value={formData.time} onChange={handleInputChange} className="w-full border border-slate-300 rounded-xl px-4 py-3 font-bold text-slate-700 bg-white focus:border-[#00d0f1] outline-none" />
                                 </div>
                             </div>
-                            {formData.day && <p className="text-xs font-bold text-[#00d0f1] mt-2 text-right">Selected Day: {formData.day}</p>}
+                            {formData.day && <p className="text-xs font-bold text-[#00d0f1] mt-3">Selected: {formData.day}</p>}
                         </div>
                     </div>
 
-                    <button type="submit" className="w-full bg-[#00d0f1] text-[#192a56] py-4 rounded-xl font-black text-lg hover:bg-cyan-400 transition-all shadow-lg flex items-center justify-center gap-2 mt-6">
-                        Show Available Doctors <CheckCircle size={20} />
+                    <button type="submit" className="w-full bg-[#00d0f1] text-[#192a56] py-4 rounded-xl font-black text-lg hover:bg-cyan-400 transition-all shadow-lg flex items-center justify-center gap-2 mt-4">
+                        Search Best Doctors <CheckCircle size={20} />
                     </button>
                 </form>
             </div>
           )}
 
-          {/* --- STEP 2: SELECT DOCTOR --- */}
+          {/* --- STEP 2: DOCTOR SELECTION --- */}
           {step === 2 && (
             <div className="animate-in slide-in-from-right-8 duration-300">
                 <div className="flex justify-between items-center mb-6">
                     <div>
-                        <h3 className="text-xl font-bold text-slate-800">Best {formData.problem}s for You</h3>
-                        <p className="text-sm text-slate-500">Date: {formData.date} ({formData.day}) at {formData.time}</p>
-                    </div>
-                    <div className="text-right">
-                        <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold">{matchingDoctors.length} Found</span>
+                        <h3 className="text-xl font-bold text-slate-800">Available {formData.problem} Specialists</h3>
+                        <p className="text-sm text-slate-500">{formData.date} | {formData.time}</p>
                     </div>
                 </div>
                 
@@ -348,106 +386,103 @@ const BookAppointment = () => {
                                     <div className="flex items-center gap-3 mt-2 text-xs font-bold text-slate-400">
                                         <span className="flex items-center gap-1"><Star size={12} className="text-yellow-400" fill="currentColor"/> {doc.rating}</span>
                                         <span>•</span>
-                                        <span>{doc.exp} Experience</span>
+                                        <span>{doc.exp} Years Exp</span>
                                     </div>
                                 </div>
                                 <div className="text-right flex flex-col justify-between">
                                     <span className="text-lg font-black text-emerald-600">₹{doc.fee}</span>
-                                    <button className="bg-[#192a56] text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-900 transition-colors">Book</button>
+                                    <button className="bg-[#192a56] text-white px-4 py-2 rounded-lg text-xs font-bold">Book Now</button>
                                 </div>
                             </div>
                         ))
                     ) : (
-                        <div className="col-span-2 text-center py-12 bg-white rounded-2xl border border-dashed border-slate-300">
-                            <Stethoscope size={40} className="mx-auto text-slate-300 mb-2"/>
-                            <p className="text-slate-500 font-medium">No doctors available for "{formData.problem}".</p>
-                            <p className="text-xs text-slate-400 mt-1">Try searching for "Dentist" or "Pet Surgery".</p>
-                            <button onClick={() => setStep(1)} className="mt-4 text-[#00d0f1] font-bold underline">Change Search</button>
+                        <div className="col-span-2 text-center py-16 bg-white rounded-2xl border-2 border-dashed border-slate-200">
+                            <Stethoscope size={48} className="mx-auto text-slate-200 mb-4"/>
+                            <p className="text-slate-500 font-bold text-lg">No doctors found for "{formData.problem}"</p>
+                            <button onClick={() => setStep(1)} className="mt-4 text-[#00d0f1] font-bold underline">Modify Search</button>
                         </div>
                     )}
                 </div>
             </div>
           )}
 
-          {/* --- STEP 3: PAYMENT GATEWAY --- */}
+          {/* --- STEP 3: BILLING & PAYMENT --- */}
           {step === 3 && selectedDoctor && (
             <div className="animate-in slide-in-from-right-8 duration-300 grid grid-cols-1 lg:grid-cols-2 gap-8">
                 
-                {/* 3a. Order Summary Card */}
+                {/* 3a. Summary Card */}
                 <div className="bg-white rounded-[2rem] p-8 border border-slate-200 shadow-sm h-fit">
                     <h3 className="text-lg font-bold text-slate-800 mb-6 border-b border-slate-100 pb-4">Booking Summary</h3>
                     
                     <div className="flex items-center gap-4 mb-6">
-                        <img src={selectedDoctor.img} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-slate-50" />
+                        <img src={selectedDoctor.img} alt="" className="w-16 h-16 rounded-full object-cover border-2 border-slate-100" />
                         <div>
                             <h4 className="font-bold text-slate-800 text-lg">{selectedDoctor.name}</h4>
-                            <p className="text-sm text-slate-500 font-medium">{selectedDoctor.speciality}</p>
-                            <div className="flex gap-1 mt-1"><Star size={14} className="text-yellow-400" fill="currentColor"/><span className="text-xs font-bold text-slate-400">{selectedDoctor.rating} Rating</span></div>
+                            <p className="text-sm text-slate-500">{selectedDoctor.speciality}</p>
                         </div>
                     </div>
 
-                    <div className="bg-slate-50 rounded-xl p-4 mb-6 border border-slate-100">
-                        <div className="flex justify-between mb-2">
-                            <span className="text-xs font-bold text-slate-400 uppercase">Patient</span>
-                            <span className="text-sm font-bold text-slate-800">{bookingType === 'pet' ? formData.petName : formData.name}</span>
-                        </div>
-                        <div className="flex justify-between mb-2">
-                            <span className="text-xs font-bold text-slate-400 uppercase">Date & Day</span>
-                            <span className="text-sm font-bold text-slate-800">{formData.date} ({formData.day})</span>
+                    <div className="bg-slate-50 rounded-xl p-5 mb-6 border border-slate-100 space-y-4">
+                        <div className="flex justify-between">
+                            <span className="text-xs font-bold text-slate-400 uppercase">Patient & Contact</span>
+                            <div className="text-right">
+                                <p className="text-sm font-bold text-slate-800">{bookingType === 'pet' ? formData.petName : formData.name}</p>
+                                <p className="text-xs font-bold text-slate-500">{formData.phone}</p> {/* ✅ Displaying Phone */}
+                            </div>
                         </div>
                         <div className="flex justify-between">
-                            <span className="text-xs font-bold text-slate-400 uppercase">Time</span>
-                            <span className="text-sm font-bold text-[#00d0f1]">{formData.time}</span>
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-tighter">Address</span>
+                            <span className="text-sm font-bold text-slate-800 text-right max-w-[160px] leading-tight truncate">{formData.address}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold text-slate-400 uppercase">Schedule</span>
+                            <span className="text-sm font-bold text-[#00d0f1]">{formData.date} at {formData.time}</span>
                         </div>
                     </div>
 
-                    <div className="space-y-3 text-sm">
-                        <div className="flex justify-between"><span className="text-slate-500">Consultation Fee</span><span className="font-bold text-slate-800">₹{selectedDoctor.fee}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-500">Booking Charge</span><span className="font-bold text-slate-800">₹50</span></div>
-                        <div className="flex justify-between"><span className="text-slate-500">Tax (GST 18%)</span><span className="font-bold text-slate-800">₹{Math.round(selectedDoctor.fee * 0.18)}</span></div>
-                    </div>
-
-                    <div className="pt-4 border-t border-slate-100 flex justify-between items-center mt-4">
-                        <span className="text-lg font-bold text-slate-800">Total Payable</span>
-                        <span className="text-3xl font-black text-[#00d0f1]">₹{selectedDoctor.fee + 50 + Math.round(selectedDoctor.fee * 0.18)}</span>
+                    <div className="space-y-3 text-sm px-1">
+                        <div className="flex justify-between"><span className="text-slate-500 font-medium">Consultation Fee</span><span className="font-bold text-slate-800">₹{selectedDoctor.fee}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-500 font-medium">Service & Platform Fee</span><span className="font-bold text-slate-800">₹50</span></div>
+                        <div className="flex justify-between"><span className="text-slate-500 font-medium">GST (18%)</span><span className="font-bold text-slate-800">₹{Math.round(selectedDoctor.fee * 0.18)}</span></div>
+                        <div className="pt-4 border-t border-slate-100 flex justify-between items-center mt-2">
+                            <span className="text-lg font-black text-slate-800">Total</span>
+                            <span className="text-3xl font-black text-[#00d0f1]">₹{selectedDoctor.fee + 50 + Math.round(selectedDoctor.fee * 0.18)}</span>
+                        </div>
                     </div>
                 </div>
 
-                {/* 3b. Payment Form (Visual Only for now) */}
-                <div className="bg-[#192a56] rounded-[2rem] p-8 text-white shadow-2xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-[#00d0f1] rounded-full blur-[80px] opacity-20 -mr-16 -mt-16"></div>
-                    
-                    <h3 className="text-xl font-bold mb-8 flex items-center gap-3"><CreditCard size={24}/> Secure Checkout</h3>
+                {/* 3b. Payment Module */}
+                <div className="bg-[#192a56] rounded-[2rem] p-8 text-white shadow-2xl relative overflow-hidden h-fit">
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-[#00d0f1] rounded-full blur-[90px] opacity-20 -mr-16 -mt-16"></div>
+                    <h3 className="text-xl font-bold mb-8 flex items-center gap-3 relative z-10"><CreditCard size={24}/> Pay Securely</h3>
                     
                     <form className="space-y-6 relative z-10">
                         <div>
                             <label className="block text-xs font-bold text-blue-200 uppercase mb-2">Card Number</label>
-                            <input type="text" placeholder="0000 0000 0000 0000" className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3.5 text-white placeholder-blue-200/30 focus:border-[#00d0f1] outline-none font-mono text-lg tracking-wider transition-all" />
+                            <input type="text" maxLength="19" placeholder="0000 0000 0000 0000" className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3.5 text-white placeholder-blue-200/30 focus:border-[#00d0f1] outline-none font-mono text-lg tracking-wider" />
                         </div>
                         <div className="grid grid-cols-2 gap-6">
                             <div>
-                                <label className="block text-xs font-bold text-blue-200 uppercase mb-2">Expiry Date</label>
-                                <input type="text" placeholder="MM/YY" className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3.5 text-white placeholder-blue-200/30 focus:border-[#00d0f1] outline-none font-mono text-center transition-all" />
+                                <label className="block text-xs font-bold text-blue-200 uppercase mb-2">Expiry</label>
+                                <input type="text" placeholder="MM/YY" className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3.5 text-white text-center outline-none" />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-blue-200 uppercase mb-2">CVV</label>
-                                <input type="password" placeholder="123" className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3.5 text-white placeholder-blue-200/30 focus:border-[#00d0f1] outline-none font-mono text-center transition-all" />
+                                <input type="password" maxLength="3" placeholder="***" className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3.5 text-white text-center outline-none" />
                             </div>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-blue-200 uppercase mb-2">Card Holder Name</label>
-                            <input type="text" placeholder="JOHN DOE" className="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3.5 text-white placeholder-blue-200/30 focus:border-[#00d0f1] outline-none font-bold uppercase transition-all" />
                         </div>
 
                         <button 
                             type="button" 
                             onClick={handlePayment} 
-                            className="w-full bg-[#00d0f1] hover:bg-white hover:text-[#192a56] text-[#192a56] py-4 rounded-xl font-black text-lg transition-all shadow-lg flex items-center justify-center gap-2 mt-2"
+                            className="w-full bg-[#00d0f1] hover:bg-white hover:text-[#192a56] text-[#192a56] py-4 rounded-xl font-black text-lg transition-all shadow-lg flex items-center justify-center gap-2 mt-4"
                         >
-                            <ShieldCheck size={22} /> Pay Now & Book
+                            <ShieldCheck size={22} /> Confirm & Pay
                         </button>
                         
-                        <p className="text-center text-xs text-blue-300/60 mt-4 flex items-center justify-center gap-1"><ShieldCheck size={12}/> 256-bit SSL Secured Payment</p>
+                        <p className="text-center text-[10px] text-blue-300/50 mt-4 uppercase font-bold tracking-widest flex items-center justify-center gap-1">
+                            <ShieldCheck size={10}/> 256-bit AES Encryption Active
+                        </p>
                     </form>
                 </div>
 

@@ -51,9 +51,9 @@ exports.createAppointment = async (req, res) => {
         // 1. Create the Appointment
         const appointment = await Appointment.create({
             user: userId,
-            
-            // ✅ Fix: Use 'doctor' instead of 'doctorId' to match Schema
-            doctor: doctor._id, 
+
+            // Save the referenced doctor using the schema field 'doctorId'
+            doctorId: doctor._id,
             
             // Snapshot Data
             doctorName: doctor.name,
@@ -66,6 +66,7 @@ exports.createAppointment = async (req, res) => {
             age: formData.age,
             gender: formData.gender,
             phone: formData.phone,
+            address: formData.address,
             type: bookingType,
             petName: formData.petName,
             petType: formData.petType,
@@ -113,7 +114,8 @@ exports.getUserAppointments = async (req, res) => {
         // Fetch appointments and sort by most recent first
         // ✅ Populating 'doctor' works now because we fixed the field name in createAppointment
         const appointments = await Appointment.find({ user: userId })
-            .populate('doctor', 'name speciality image fee') 
+            // Populate the actual schema field 'doctorId' and use the Doctor model's 'img' field
+            .populate('doctorId', 'name speciality img fee') 
             .sort({ date: -1, time: -1 });
 
         if (!appointments) {
@@ -143,6 +145,61 @@ exports.seedDoctors = async (req, res) => {
         await Doctor.insertMany(doctors);
         
         res.json({ message: 'Doctors seeded successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+// @desc    Get All Live Specialists
+// @route   GET /api/admin/specialists
+exports.getSpecialists = async (req, res) => {
+    try {
+        // Sort by status to show 'busy' ones first or last as needed
+        const specialists = await Specialist.find().sort({ updatedAt: -1 });
+        res.json(specialists);
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching tracker data" });
+    }
+};
+
+// @desc    Add Specialist to Tracker
+// @route   POST /api/admin/specialists
+exports.addSpecialist = async (req, res) => {
+    try {
+        const specialist = new Specialist(req.body);
+        const savedSpecialist = await specialist.save();
+        res.status(201).json(savedSpecialist);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
+// @desc    Update Live Status (Task, Location, Time)
+// @route   PUT /api/admin/specialists/:id
+exports.updateSpecialist = async (req, res) => {
+    try {
+        const specialist = await Specialist.findByIdAndUpdate(
+            req.params.id, 
+            req.body, 
+            { new: true } // Return updated document
+        );
+        
+        if (!specialist) return res.status(404).json({ message: "Specialist not found" });
+        
+        res.json(specialist);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
+// @desc    Remove from Tracker
+// @route   DELETE /api/admin/specialists/:id
+exports.deleteSpecialist = async (req, res) => {
+    try {
+        const specialist = await Specialist.findById(req.params.id);
+        if (!specialist) return res.status(404).json({ message: "Specialist not found" });
+
+        await specialist.deleteOne();
+        res.json({ message: "Removed from tracker" });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

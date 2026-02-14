@@ -1,0 +1,304 @@
+const Doctor = require('../models/Doctor');
+const Patient = require('../models/Patient');
+const Appointment = require('../models/Appointment');
+const Transaction = require('../models/Transaction');
+const Settings = require('../models/Settings');
+// @desc    Get all doctors
+// @route   GET /api/admin/doctors
+exports.getDoctors = async (req, res) => {
+    try {
+        const doctors = await Doctor.find().sort({ createdAt: -1 });
+        res.json(doctors);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// @desc    Add new doctor
+// @route   POST /api/admin/doctors
+exports.addDoctor = async (req, res) => {
+    try {
+        const doctor = new Doctor(req.body);
+        const createdDoctor = await doctor.save();
+        res.status(201).json(createdDoctor);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
+// @desc    Update doctor details
+// @route   PUT /api/admin/doctors/:id
+exports.updateDoctor = async (req, res) => {
+    try {
+        const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+        res.json(doctor);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
+// @desc    Delete doctor
+// @route   DELETE /api/admin/doctors/:id
+exports.deleteDoctor = async (req, res) => {
+    try {
+        const doctor = await Doctor.findById(req.params.id);
+        if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
+        
+        await doctor.deleteOne();
+        res.json({ message: 'Doctor removed' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+exports.getPatients = async (req, res) => {
+    try {
+        const patients = await Patient.find().sort({ createdAt: -1 });
+        res.json(patients);
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching patients" });
+    }
+};
+exports.addPatient = async (req, res) => {
+    try {
+        const { patientId } = req.body;
+        
+        // Check duplicate ID
+        const exists = await Patient.findOne({ patientId });
+        if (exists) {
+            return res.status(400).json({ message: "Patient ID already exists" });
+        }
+
+        const patient = new Patient(req.body);
+        const createdPatient = await patient.save();
+        res.status(201).json(createdPatient);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
+// @desc    Update Patient Details
+// @route   PUT /api/admin/patients/:id
+exports.updatePatient = async (req, res) => {
+    try {
+        const patient = await Patient.findById(req.params.id);
+
+        if (patient) {
+            // Update fields
+            patient.name = req.body.name || patient.name;
+            patient.phone = req.body.phone || patient.phone;
+            patient.address = req.body.address || patient.address;
+            patient.age = req.body.age || patient.age;
+            patient.paid = req.body.paid || patient.paid;
+            patient.lastVisit = req.body.lastVisit || patient.lastVisit;
+            patient.img = req.body.img || patient.img;
+            
+            // Conditional Updates
+            if(req.body.type) patient.type = req.body.type;
+            if(req.body.ownerName) patient.ownerName = req.body.ownerName;
+            if(req.body.breed) patient.breed = req.body.breed;
+            if(req.body.gender) patient.gender = req.body.gender;
+
+            const updatedPatient = await patient.save();
+            res.json(updatedPatient);
+        } else {
+            res.status(404).json({ message: "Patient not found" });
+        }
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
+// @desc    Delete Patient Record
+// @route   DELETE /api/admin/patients/:id
+exports.deletePatient = async (req, res) => {
+    try {
+        const patient = await Patient.findById(req.params.id);
+
+        if (patient) {
+            await patient.deleteOne();
+            res.json({ message: "Patient removed" });
+        } else {
+            res.status(404).json({ message: "Patient not found" });
+        }
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// --- SPECIALIST TRACKER HANDLERS ---
+// @desc    Get All Doctors for Tracker
+// @route   GET /api/admin/specialists
+exports.getSpecialists = async (req, res) => {
+    try {
+        // Hum Doctors table se data layenge
+        const specialists = await Doctor.find().sort({ updatedAt: -1 });
+        res.json(specialists);
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching tracker data" });
+    }
+};
+
+// @desc    Add New Doctor (via Tracker Page)
+// @route   POST /api/admin/specialists
+exports.addSpecialist = async (req, res) => {
+    try {
+        // Agar Tracker page se add kiya, toh wo Doctor table mein save hoga
+        const doctor = new Doctor({
+            ...req.body,
+            fee: req.body.fee || 500, // Default fee agar form mein nahi hai
+            exp: "1 Yr" // Default exp
+        });
+        const savedDoctor = await doctor.save();
+        res.status(201).json(savedDoctor);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
+// @desc    Update Live Status (Busy/Available)
+// @route   PUT /api/admin/specialists/:id
+exports.updateSpecialist = async (req, res) => {
+    try {
+        // Doctor ka status update karein
+        const doctor = await Doctor.findByIdAndUpdate(
+            req.params.id, 
+            req.body, 
+            { new: true }
+        );
+        
+        if (!doctor) return res.status(404).json({ message: "Doctor not found" });
+        
+        res.json(doctor);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+
+// @desc    Delete Doctor
+// @route   DELETE /api/admin/specialists/:id
+exports.deleteSpecialist = async (req, res) => {
+    try {
+        const doctor = await Doctor.findById(req.params.id);
+        if (!doctor) return res.status(404).json({ message: "Doctor not found" });
+
+        await doctor.deleteOne();
+        res.json({ message: "Removed from system" });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+// @desc    Get All Appointments for Admin
+// @route   GET /api/admin/appointments
+exports.getAppointments = async (req, res) => {
+    try {
+        // Kyunki 'doctorImg' ab Appointment table mein hi hai, 
+        // humein .populate() karne ki zaroorat nahi hai (Fast Performance)
+        const appointments = await Appointment.find().sort({ createdAt: -1 });
+        
+        res.json(appointments);
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching appointments" });
+    }
+};
+
+// @desc    Toggle Status
+// @route   PUT /api/admin/appointments/:id/toggle
+exports.toggleAppointmentStatus = async (req, res) => {
+    try {
+        const appointment = await Appointment.findById(req.params.id);
+        if (!appointment) return res.status(404).json({ message: "Not Found" });
+
+        appointment.status = appointment.status === 'Scheduled' ? 'Cancelled' : 'Scheduled';
+        await appointment.save();
+
+        res.json({ message: "Status Updated", status: appointment.status });
+    } catch (error) {
+        res.status(500).json({ message: "Update failed" });
+    }
+};
+// ==========================================
+// TRANSACTION CONTROLLERS
+// ==========================================
+
+// @desc    Get All Transactions
+// @route   GET /api/admin/transactions
+exports.getTransactions = async (req, res) => {
+    try {
+        const transactions = await Transaction.find().sort({ date: -1 });
+        res.json(transactions);
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching transactions" });
+    }
+};
+
+// @desc    Delete Transaction
+// @route   DELETE /api/admin/transactions/:id
+exports.deleteTransaction = async (req, res) => {
+    try {
+        const transaction = await Transaction.findById(req.params.id);
+        if (!transaction) return res.status(404).json({ message: "Transaction not found" });
+
+        await transaction.deleteOne();
+        res.json({ message: "Transaction removed" });
+    } catch (error) {
+        res.status(500).json({ message: "Delete failed" });
+    }
+};
+
+// @desc    (Optional) Add Manual Expense
+// @route   POST /api/admin/transactions
+exports.addTransaction = async (req, res) => {
+    try {
+        const { name, type, amount, flow, status, method } = req.body;
+        
+        const transaction = await Transaction.create({
+            invoiceId: `#TRX-${Date.now().toString().slice(-4)}`,
+            name,
+            type,
+            amount,
+            flow, // 'debit' for expenses
+            status: status || 'Paid',
+            method: method || 'Cash',
+            date: new Date()
+        });
+
+        res.status(201).json(transaction);
+    } catch (error) {
+        res.status(400).json({ message: error.message });
+    }
+};
+// @desc    Get current platform settings
+// @route   GET /api/admin/settings
+exports.getSettings = async (req, res) => {
+    try {
+        // We look for the first settings document. If none exists, create default.
+        let settings = await Settings.findOne();
+        if (!settings) {
+            settings = await Settings.create({});
+        }
+        res.json(settings);
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching settings" });
+    }
+};
+
+// @desc    Update platform settings
+// @route   PUT /api/admin/settings
+exports.updateSettings = async (req, res) => {
+    try {
+        let settings = await Settings.findOne();
+        
+        if (settings) {
+            // Update existing settings
+            settings = await Settings.findByIdAndUpdate(settings._id, req.body, { new: true });
+        } else {
+            // Create if for some reason it doesn't exist
+            settings = await Settings.create(req.body);
+        }
+        
+        res.json({ message: "Settings updated successfully", settings });
+    } catch (error) {
+        res.status(400).json({ message: "Error updating settings", error: error.message });
+    }
+};

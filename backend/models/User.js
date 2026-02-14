@@ -18,8 +18,14 @@ const userSchema = mongoose.Schema({
         type: String,
         enum: ['admin', 'doctor', 'receptionist', 'patient'], // Sirf ye roles allowed hain
         default: 'patient'
-    }
-}, {
+    },
+    speciality: { type: String },
+    fee: { type: Number },
+    exp: { type: String },
+    availability: [{ type: String }]
+},
+
+ {
     timestamps: true // CreatedAt aur UpdatedAt khud aa jayega
 });
 

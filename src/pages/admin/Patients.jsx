@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import AdminSidebar from '../../components/admin/AdminSidebar'; 
 import AdminHeader from '../../components/admin/AdminHeader';
 import { 
   Pencil, Trash2, Plus, X, User, Dog, FileText, Calendar, 
-  MapPin, Phone, Upload, DollarSign, Clock, CheckCircle
+  MapPin, Phone, Upload, DollarSign, Clock, CheckCircle, Loader2
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 const Patients = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -30,70 +31,99 @@ const Patients = () => {
   };
 
   const [currentPatient, setCurrentPatient] = useState(initialPatientState);
+  const [patients, setPatients] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
 
-  // --- DUMMY DATA ---
-  const [patients, setPatients] = useState([
-    { 
-      id: 1, 
-      patientId: "PT001",
-      name: "Charlene Reed", 
-      type: "human", 
-      age: "29",
-      address: "4417 Goosetown Drive, NC",
-      phone: "8286329170",
-      lastVisit: "20 Oct 2026",
-      paid: "100.00",
-      status: "active",
-      img: "https://randomuser.me/api/portraits/women/22.jpg" 
-    },
-    { 
-      id: 2, 
-      patientId: "PT002",
-      name: "Bruno", 
-      type: "pet", 
-      ownerName: "Travis Trimble",
-      breed: "Labrador",
-      age: "4",
-      address: "4026 Fantages Way, Maine",
-      phone: "2077299974",
-      lastVisit: "22 Oct 2026",
-      paid: "200.00",
-      status: "active",
-      img: "https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&q=80&w=100&h=100" 
-    },
-    { 
-      id: 3, 
-      patientId: "PT003",
-      name: "Carl Kelly", 
-      type: "human", 
-      age: "29",
-      address: "2037 Pearcy Avenue, Indiana",
-      phone: "2607247769",
-      lastVisit: "21 Oct 2026",
-      paid: "250.00",
-      status: "active",
-      img: "https://randomuser.me/api/portraits/men/45.jpg" 
-    },
-    { 
-      id: 4, 
-      patientId: "PT004",
-      name: "Milo", 
-      type: "pet", 
-      ownerName: "Gina Moore",
-      breed: "Persian Cat",
-      age: "2",
-      address: "888 Everette Alley, Florida",
-      phone: "9548207887",
-      lastVisit: "18 Sep 2026",
-      paid: "350.00",
-      status: "active",
-      img: "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?auto=format&fit=crop&q=80&w=100&h=100" 
+ // --- 1. FETCH DATA FROM BACKEND ---
+  const fetchPatients = async () => {
+    setIsLoading(true);
+    const storedData = JSON.parse(localStorage.getItem('user_token'));
+    if (!storedData) { navigate('/login'); return; }
+
+    try {
+      const res = await fetch('http://localhost:5000/api/admin/patients', {
+        headers: { 'Authorization': `Bearer ${storedData.token}` }
+      });
+      const data = await res.json();
+      if (res.ok) setPatients(data);
+    } catch (err) {
+      console.error("Error fetching patients", err);
+    } finally {
+      setIsLoading(false);
     }
-  ]);
+  };
 
-  // --- HANDLERS ---
+  useEffect(() => { fetchPatients(); }, [navigate]);
+
+  // --- 2. DELETE PATIENT ---
+  const handleDelete = async (id) => {
+    if(!window.confirm("Permanently delete this patient record?")) return;
+    
+    const storedData = JSON.parse(localStorage.getItem('user_token'));
+    try {
+      const res = await fetch(`http://localhost:5000/api/admin/patients/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${storedData.token}` }
+      });
+      if (res.ok) fetchPatients();
+    } catch (err) {
+      alert("Delete failed");
+    }
+  };
+
+  // --- 3. SAVE / UPDATE PATIENT ---
+  const handleSave = async (e) => {
+    e.preventDefault();
+    const storedData = JSON.parse(localStorage.getItem('user_token'));
+    
+    const isEdit = !!currentPatient._id;
+    const url = isEdit 
+      ? `http://localhost:5000/api/admin/patients/${currentPatient._id}`
+      : 'http://localhost:5000/api/admin/patients';
+
+    try {
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${storedData.token}` 
+        },
+        body: JSON.stringify(currentPatient)
+      });
+
+      if (res.ok) {
+        setIsModalOpen(false);
+        fetchPatients();
+      } else {
+        const errorData = await res.json();
+        alert(errorData.message || "Save failed");
+      }
+    } catch (err) {
+      alert("Server connection error");
+    }
+  };
+
+  // --- IMAGE & FILE HANDLERS (Base64 for DB Storage) ---
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setCurrentPatient({ ...currentPatient, img: reader.result });
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) setCurrentPatient({ ...currentPatient, medicalHistory: file.name });
+  };
+
+  // --- MODAL TRIGGERS ---
   const handleAdd = () => {
-    setCurrentPatient({ ...initialPatientState, patientId: `PT00${patients.length + 1}` });
+    // Auto-generate a simple ID for the new patient
+    const newId = `PT${Date.now().toString().slice(-4)}`;
+    setCurrentPatient({ ...initialPatientState, patientId: newId });
     setIsModalOpen(true);
   };
 
@@ -102,32 +132,12 @@ const Patients = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id) => {
-    if(window.confirm("Remove patient record?")) {
-      setPatients(patients.filter(p => p.id !== id));
-    }
-  };
-
-  const handleImageChange = (e) => {
-    const file = e.target.files[0];
-    if (file) setCurrentPatient({ ...currentPatient, img: URL.createObjectURL(file) });
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) setCurrentPatient({ ...currentPatient, medicalHistory: file.name });
-  };
-
-  const handleSave = (e) => {
-    e.preventDefault();
-    if (currentPatient.id) {
-      setPatients(patients.map(p => p.id === currentPatient.id ? currentPatient : p));
-    } else {
-      setPatients([...patients, { ...currentPatient, id: Date.now() }]);
-    }
-    setIsModalOpen(false);
-  };
-
+  if (isLoading) return (
+    <div className="h-screen flex flex-col items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-[#192a56]" size={40} />
+        <p className="mt-4 font-bold text-slate-400 uppercase tracking-widest text-xs">Syncing Patient Data...</p>
+    </div>
+  );
   return (
     <div className="bg-slate-50 min-h-screen relative">
       {/* Sidebar & Header */}
