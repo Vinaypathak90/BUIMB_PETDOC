@@ -3,6 +3,7 @@ const Patient = require('../models/Patient');
 const Appointment = require('../models/Appointment');
 const Transaction = require('../models/Transaction');
 const Settings = require('../models/Settings');
+
 // @desc    Get all doctors
 // @route   GET /api/admin/doctors
 exports.getDoctors = async (req, res) => {
@@ -381,5 +382,29 @@ exports.getDashboardStats = async (req, res) => {
     } catch (error) {
         console.error("Stats Error:", error);
         res.status(500).json({ message: "Error fetching dashboard stats" });
+    }
+};
+
+exports.getChartData = async (req, res) => {
+    try {
+        // Revenue by Year
+        const revenueAgg = await Transaction.aggregate([
+            { $match: { flow: 'credit', status: 'Paid' } },
+            { $group: { _id: { $year: "$date" }, total: { $sum: "$amount" } } },
+            { $sort: { _id: 1 } }
+        ]);
+        const revenueData = revenueAgg.map(item => ({ year: item._id.toString(), revenue: item.total }));
+
+        // Doctor & Patient Growth (Simplified logic)
+        // In a real app, you would aggregate User/Doctor models by createdAt
+        const statusData = [
+            { year: '2024', doctors: 5, patients: 20 },
+            { year: '2025', doctors: 12, patients: 45 },
+            { year: '2026', doctors: 24, patients: 85 }
+        ];
+
+        res.json({ revenueData, statusData });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching chart data" });
     }
 };

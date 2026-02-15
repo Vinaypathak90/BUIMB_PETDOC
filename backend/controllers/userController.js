@@ -158,3 +158,113 @@ await Transaction.create({
     date: new Date()
 });
 */
+// ==========================================
+// 1. GET ADMIN PROFILE
+// ==========================================
+// @route   GET /api/user/admin-profile
+exports.getAdminProfile = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id).select('-password');
+        if (user) {
+            res.json(user);
+        } else {
+            res.status(404).json({ message: "User not found" });
+        }
+    } catch (error) {
+        res.status(500).json({ message: "Server Error" });
+    }
+};
+
+// ==========================================
+// 2. UPDATE ADMIN PROFILE
+// ==========================================
+// @route   PUT /api/user/admin-profile
+exports.updateAdminProfile = async (req, res) => {
+    try {
+        const user = await User.findById(req.user.id);
+
+        if (user) {
+            // Update fields if present in body
+            user.name = req.body.name || user.name;
+            user.phone = req.body.phone || user.phone;
+            user.dob = req.body.dob || user.dob;
+            user.address = req.body.address || user.address;
+            user.bio = req.body.bio || user.bio;
+            user.img = req.body.img || user.img;
+            user.cover = req.body.cover || user.cover;
+
+            // Mark profile complete if critical fields exist
+            if (user.phone && user.address) {
+                user.isProfileComplete = true;
+            }
+
+            const updatedUser = await user.save();
+
+            res.json({
+                _id: updatedUser._id,
+                name: updatedUser.name,
+                email: updatedUser.email,
+                role: updatedUser.role,
+                phone: updatedUser.phone,
+                img: updatedUser.img,
+                isProfileComplete: updatedUser.isProfileComplete,
+                token: req.token // If you want to refresh token (optional)
+            });
+        } else {
+            res.status(404).json({ message: "User not found" });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Update failed" });
+    }
+};
+
+// ==========================================
+// 3. GET ALL ADMINS (For Team Tab)
+// ==========================================
+// @route   GET /api/user/admins
+exports.getAdmins = async (req, res) => {
+    try {
+        // Find all users where role is 'admin' (excluding password)
+        const admins = await User.find({ role: 'admin' }).select('-password');
+        res.json(admins);
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching team" });
+    }
+};
+
+// ==========================================
+// 4. UPDATE PASSWORD
+// ==========================================
+// @route   PUT /api/user/update-password
+exports.updatePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const user = await User.findById(req.user.id);
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+
+        // Verify Current Password
+        // Note: We use bcrypt.compare directly here because user.password is hashed
+        // but user found via findById doesn't have the matchPassword method available 
+        // unless you explicitly load the schema methods or use user instance.
+        // The method defined in schema works on the instance 'user'.
+        const isMatch = await user.matchPassword(currentPassword);
+        
+        if (!isMatch) {
+            return res.status(400).json({ message: "Incorrect current password" });
+        }
+
+        // Update to New Password (pre-save middleware handles hashing)
+        user.password = newPassword;
+        await user.save();
+
+        res.json({ message: "Password updated successfully" });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Server Error" });
+    }
+};
