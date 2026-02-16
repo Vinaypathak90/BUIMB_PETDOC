@@ -13,6 +13,7 @@ const transactionRoutes = require('./routes/transactionRoutes');
 
 const adminRoutes = require('./routes/adminRoutes');
 
+const patientRoutes = require('./routes/receptionistRoutes'); // Receptionist routes (includes patient management)
 dotenv.config();
 connectDB(); // Connect to MongoDB
 
@@ -33,7 +34,7 @@ app.use('/api/ai', aiRoutes); // 👈 Enable AI route
 
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/admin', adminRoutes);
-
+app.use('/api/receptionist', require('./routes/receptionistRoutes'));
 // Test Route
 app.get('/', (req, res) => {
     res.send('API is running...');
