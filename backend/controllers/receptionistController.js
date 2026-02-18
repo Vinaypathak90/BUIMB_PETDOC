@@ -36,7 +36,7 @@ exports.registerPatient = async (req, res) => {
             gender,
             phone,
             address,
-            type: type || 'human', // Default to human if not sent
+            type: type || 'Human', // Default to human if not sent
             ownerName: type === 'pet' ? ownerName : '',
             breed: type === 'pet' ? breed : '',
             medicalHistory: medicalHistory || '',
@@ -192,5 +192,69 @@ exports.getLiveQueue = async (req, res) => {
 
     } catch (err) {
         res.status(500).json({ message: "Queue data fetch failed" });
+    }
+};
+
+// --- 1. GET DOCTORS LIST (For Dropdown) ---
+exports.getDoctorsList = async (req, res) => {
+    try {
+        // We need Name, Specialty, and Fee for the dropdown logic
+        const doctors = await Doctor.find({}).select('name speciality fee');
+        res.status(200).json(doctors);
+    } catch (err) {
+        res.status(500).json({ message: "Failed to load doctors" });
+    }
+};
+
+// --- 2. BOOK WALK-IN APPOINTMENT ---
+// ==========================================
+// 6. BOOK WALK-IN (New Registration Form) ✅ FIX HERE
+// ==========================================
+exports.bookWalkIn = async (req, res) => {
+    try {
+        const { 
+            name, age, gender, contact, address, 
+            appointmentFor, doctor, symptoms, diseases, 
+            consultationFee, type, priority 
+        } = req.body;
+
+        // Generate Random Token
+        const tokenNumber = `T-${Math.floor(100 + Math.random() * 900)}`;
+
+        const newAppt = new Appointment({
+            // ✅ FIX 1: Map 'contact' (Frontend) to 'phone' (Schema)
+            phone: contact, 
+            
+            patientName: name,
+            age,
+            gender,
+            address,
+            contact, // (Optional: Backup field)
+            
+            problem: appointmentFor,
+            doctorName: doctor,
+            symptoms: symptoms + (diseases ? ` (History: ${diseases})` : ""),
+            
+            date: new Date().toISOString().split('T')[0],
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            
+            // ✅ FIX 2: Convert "Human" -> "human"
+            type: type ? type.toLowerCase() : 'walk-in', 
+            
+            // ✅ FIX 3: Default Priority
+            priority: priority || 'Normal',
+            
+            amount: consultationFee,
+            paymentStatus: 'Paid',
+            status: 'Waiting',
+            token: tokenNumber
+        });
+
+        await newAppt.save();
+        res.status(201).json(newAppt);
+
+    } catch (err) {
+        console.error("Booking Error:", err);
+        res.status(500).json({ message: "Registration failed: " + err.message });
     }
 };

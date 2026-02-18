@@ -26,11 +26,7 @@ const appointmentSchema = mongoose.Schema({
     
     // --- Type ---
     // Change: 'Walk-in' aur 'Emergency' add kiya. Purane options (myself, pet) waise hi hain.
-    type: { 
-        type: String, 
-        enum: ['myself', 'pet', 'other', 'Walk-in', 'Emergency'], 
-        required: true 
-    },
+   type: { type: String, default: 'walk-in' },
     
     // Pet Specific
     petName: { type: String },
