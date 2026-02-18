@@ -169,3 +169,28 @@ exports.getDoctorsList = async (req, res) => {
         res.status(500).json({ message: "Doctors list load nahi huyi" });
     }
 };
+
+// 5. GET LIVE QUEUE STATUS
+exports.getLiveQueue = async (req, res) => {
+    try {
+        // 1. Find who is currently inside with the doctor
+        const currentPatient = await Appointment.findOne({ 
+            status: 'With Doctor',
+            date: new Date().toISOString().split('T')[0] // Only today
+        }).select('patientName token doctorName time type');
+
+        // 2. Find who is waiting (Sorted: Emergency first, then by Time)
+        const waitingQueue = await Appointment.find({
+            status: { $in: ['Checked-in', 'Waiting'] },
+            date: new Date().toISOString().split('T')[0]
+        }).sort({ type: 1, time: 1 }); // 'Emergency' comes before 'Walk-in' alphabetically, or use custom sort logic if needed
+
+        res.status(200).json({
+            current: currentPatient,
+            queue: waitingQueue
+        });
+
+    } catch (err) {
+        res.status(500).json({ message: "Queue data fetch failed" });
+    }
+};

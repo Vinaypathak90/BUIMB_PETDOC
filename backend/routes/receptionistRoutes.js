@@ -6,8 +6,8 @@ const {
     registerPatient, 
     searchPatient,
     getAppointments, bookAppointment, updateAppointmentStatus ,
-    getDoctorsList
-
+    getDoctorsList,
+getLiveQueue
 } = require('../controllers/receptionistController');
 
 // --- Patient Management Routes ---
@@ -20,4 +20,7 @@ router.post('/appointments', protect, bookAppointment);
 router.put('/appointments/:id/status', protect, updateAppointmentStatus);
 
 router.get('/doctors', protect, getDoctorsList);
+router.get('/live-queue', protect, getLiveQueue);
+
+
 module.exports = router;
