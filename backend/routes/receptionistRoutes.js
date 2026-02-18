@@ -15,6 +15,13 @@ const {
     addDoctor 
 } = require('../controllers/doctorController');
 
+// --- Import NEW Billing Controller ---
+const { 
+    createInvoice, 
+    getAllInvoices, 
+    searchInvoices 
+} = require('../controllers/billingController');
+
 
 // --- Patient Management Routes ---
 router.get('/patients', protect, getAllPatients);
@@ -34,4 +41,12 @@ router.put('/doctors/:id/status', protect, updateDoctorStatus); // Toggle Status
 router.post('/doctors', protect, addDoctor);                 // Add New Doctor
 // --- New Walk-in Registration (The form you just made) ---
 router.post('/book-walk-in', protect, bookWalkIn);
+
+// ==========================================
+// 💰 NEW BILLING ROUTES
+// ==========================================
+router.post('/billing/create', protect, createInvoice);   // Save Invoice
+router.get('/billing/history', protect, getAllInvoices);  // Get List
+router.get('/billing/search', protect, searchInvoices);   // Search List
+
 module.exports = router;

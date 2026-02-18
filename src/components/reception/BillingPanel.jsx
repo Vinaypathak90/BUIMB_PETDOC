@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Search, Plus, Trash2, Printer, FileText, 
-  CreditCard, Save, History, ChevronRight, RefreshCw 
+  CreditCard, Save, History, ChevronRight, RefreshCw, Loader2
 } from 'lucide-react';
 
 const BillingPanel = () => {
   // --- STATE ---
   const [view, setView] = useState('create'); // 'create' | 'history'
+  const [isLoading, setIsLoading] = useState(false);
   
   // Data States
   const [patients, setPatients] = useState([]);
@@ -19,20 +20,33 @@ const BillingPanel = () => {
   
   const [invoiceMeta, setInvoiceMeta] = useState({
     invoiceNo: `INV-${Math.floor(1000 + Math.random() * 9000)}`,
-    date: new Date().toLocaleDateString(),
+    date: new Date().toISOString().split('T')[0], // YYYY-MM-DD for input
     paymentMode: 'Cash',
     discount: 0
   });
 
   // --- 1. LOAD DATA (Patients & History) ---
   useEffect(() => {
-    // Load Patients
-    const storedPatients = JSON.parse(localStorage.getItem('reception_data')) || [];
-    setPatients(storedPatients);
+    const fetchData = async () => {
+        try {
+            const userData = JSON.parse(localStorage.getItem('user_token'));
+            const headers = { 'Authorization': `Bearer ${userData?.token}` };
 
-    // Load Billing History
-    const history = JSON.parse(localStorage.getItem('billing_records')) || [];
-    setSavedInvoices(history);
+            // 1. Fetch Patients (Mock or Real API if available)
+            // For now, using localStorage backup or empty array
+            const storedPatients = JSON.parse(localStorage.getItem('reception_data')) || [];
+            setPatients(storedPatients);
+
+            // 2. Fetch Invoice History from Backend
+            const res = await fetch('http://localhost:5000/api/receptionist/billing/history', { headers });
+            const data = await res.json();
+            if (res.ok) setSavedInvoices(data);
+
+        } catch (err) {
+            console.error("Error loading billing data:", err);
+        }
+    };
+    fetchData();
   }, []);
 
   // --- 2. LIVE CALCULATIONS ---
@@ -48,25 +62,48 @@ const BillingPanel = () => {
     setItems(items.map(i => i.id === id ? { ...i, [field]: value } : i));
   };
 
-  // Save Invoice to Storage
-  const handleSaveInvoice = () => {
-    const newInvoice = {
-        id: invoiceMeta.invoiceNo,
-        patientName: selectedPatient ? selectedPatient.name : 'Walk-in Customer',
-        phone: selectedPatient ? selectedPatient.contact : '---',
-        date: new Date().toLocaleDateString(),
-        time: new Date().toLocaleTimeString(),
-        items: items,
-        meta: invoiceMeta,
-        totals: { subTotal, grandTotal }
-    };
+  // Save Invoice to Backend
+  const handleSaveInvoice = async () => {
+    if(!selectedPatient && !window.confirm("No patient selected. Save as Walk-in?")) return;
 
-    const updatedHistory = [newInvoice, ...savedInvoices];
-    setSavedInvoices(updatedHistory);
-    localStorage.setItem('billing_records', JSON.stringify(updatedHistory));
-    
-    alert('Invoice Saved Successfully!');
-    handleReset(); // Reset for next bill
+    setIsLoading(true);
+    try {
+        const userData = JSON.parse(localStorage.getItem('user_token'));
+        
+        const payload = {
+            invoiceNo: invoiceMeta.invoiceNo,
+            patientName: selectedPatient ? selectedPatient.name : 'Walk-in Customer',
+            phone: selectedPatient ? (selectedPatient.contact || selectedPatient.phone) : '---',
+            items,
+            meta: invoiceMeta,
+            totals: { subTotal, grandTotal }
+        };
+
+        const res = await fetch('http://localhost:5000/api/receptionist/billing/create', {
+            method: 'POST',
+            headers: { 
+                'Authorization': `Bearer ${userData?.token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            // Add new invoice to local list (Optimistic Update)
+            setSavedInvoices([data, ...savedInvoices]);
+            alert('Invoice Saved Successfully!');
+            handlePrint(); // Auto trigger print
+            handleReset(); // Reset form
+        } else {
+            alert(data.message || "Failed to save invoice.");
+        }
+    } catch (err) {
+        alert("Server Error: Could not save invoice.");
+    } finally {
+        setIsLoading(false);
+    }
   };
 
   // Reset Form
@@ -75,7 +112,7 @@ const BillingPanel = () => {
     setSelectedPatient(null);
     setInvoiceMeta({
         invoiceNo: `INV-${Math.floor(1000 + Math.random() * 9000)}`,
-        date: new Date().toLocaleDateString(),
+        date: new Date().toISOString().split('T')[0],
         paymentMode: 'Cash',
         discount: 0
     });
@@ -84,10 +121,19 @@ const BillingPanel = () => {
 
   // Load Old Invoice to View/Print
   const handleViewInvoice = (inv) => {
-    setInvoiceMeta(inv.meta);
-    setItems(inv.items);
-    setSelectedPatient({ name: inv.patientName, contact: inv.phone }); // Mock object for display
-    setView('create'); // Go to preview view
+    // Map backend data back to form state
+    setInvoiceMeta({
+        invoiceNo: inv.invoiceNo,
+        date: inv.date, // Assuming backend returns stored string
+        paymentMode: inv.paymentMode,
+        discount: inv.discount
+    });
+    
+    // Map items (Ensure IDs exist for React keys)
+    setItems(inv.items.map((i, idx) => ({ ...i, id: i._id || idx })));
+    
+    setSelectedPatient({ name: inv.patientName, contact: inv.phone });
+    setView('create'); // Switch to preview view
   };
 
   const handlePrint = () => window.print();
@@ -162,13 +208,13 @@ const BillingPanel = () => {
                                     />
                                     {searchQuery && (
                                         <div className="absolute top-full left-0 w-full bg-white border border-slate-200 rounded-xl mt-2 shadow-xl z-20 max-h-40 overflow-y-auto">
-                                            {filteredPatients.map(p => (
-                                                <div key={p.id} onClick={() => {setSelectedPatient(p); setSearchQuery('');}} className="p-3 hover:bg-slate-50 cursor-pointer border-b last:border-0">
+                                            {filteredPatients.map((p, idx) => (
+                                                <div key={p.id || idx} onClick={() => {setSelectedPatient(p); setSearchQuery('');}} className="p-3 hover:bg-slate-50 cursor-pointer border-b last:border-0">
                                                     <p className="font-bold text-sm">{p.name}</p>
-                                                    <p className="text-xs text-slate-400">{p.phone}</p>
+                                                    <p className="text-xs text-slate-400">{p.phone || p.contact}</p>
                                                 </div>
                                             ))}
-                                            <div onClick={() => {setSelectedPatient({name: 'Walk-in', contact: '---'}); setSearchQuery('');}} className="p-3 hover:bg-slate-50 cursor-pointer text-[#00d0f1] font-bold text-xs">
+                                            <div onClick={() => {setSelectedPatient({name: 'Walk-in Customer', contact: '---'}); setSearchQuery('');}} className="p-3 hover:bg-slate-50 cursor-pointer text-[#00d0f1] font-bold text-xs">
                                                 + Use as Walk-in Customer
                                             </div>
                                         </div>
@@ -216,8 +262,8 @@ const BillingPanel = () => {
                     </div>
 
                     <div className="p-6 border-t border-slate-100">
-                        <button onClick={handleSaveInvoice} className="w-full py-3 bg-[#1e293b] text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-[#00d0f1] hover:text-[#1e293b] transition-all shadow-lg">
-                            <Save size={18}/> Save & Print Invoice
+                        <button onClick={handleSaveInvoice} disabled={isLoading} className="w-full py-3 bg-[#1e293b] text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-[#00d0f1] hover:text-[#1e293b] transition-all shadow-lg disabled:opacity-70">
+                            {isLoading ? <Loader2 className="animate-spin" size={18}/> : <><Save size={18}/> Save & Print Invoice</>}
                         </button>
                     </div>
                 </>
@@ -233,13 +279,13 @@ const BillingPanel = () => {
                             <div className="text-center py-10 text-slate-400 text-xs font-bold">No saved invoices.</div>
                         ) : (
                             savedInvoices.map((inv) => (
-                                <div key={inv.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 flex justify-between items-center cursor-pointer group" onClick={() => handleViewInvoice(inv)}>
+                                <div key={inv._id || inv.invoiceNo} className="p-4 border-b border-slate-50 hover:bg-slate-50 flex justify-between items-center cursor-pointer group" onClick={() => handleViewInvoice(inv)}>
                                     <div>
                                         <p className="font-bold text-slate-800 text-sm">{inv.patientName}</p>
-                                        <p className="text-[10px] text-slate-400 font-bold">{inv.id} • {inv.date}</p>
+                                        <p className="text-[10px] text-slate-400 font-bold">{inv.invoiceNo} • {inv.date}</p>
                                     </div>
                                     <div className="text-right">
-                                        <p className="font-black text-[#1e293b]">₹{inv.totals.grandTotal}</p>
+                                        <p className="font-black text-[#1e293b]">₹{inv.grandTotal}</p>
                                         <span className="text-[10px] text-[#00d0f1] font-bold group-hover:underline">View & Print</span>
                                     </div>
                                 </div>
