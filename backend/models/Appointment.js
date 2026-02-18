@@ -1,10 +1,11 @@
 const mongoose = require('mongoose');
 
 const appointmentSchema = mongoose.Schema({
-    // User (Account Holder)
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    // --- User (Account Holder) ---
+    // Change: 'required: true' hata diya taaki Receptionist bina login wale patient ko add kar sake
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, 
     
-    // ✅ LINK TO NEW PATIENT TABLE
+    // Link to Patient Table
     patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'Patient' }, 
 
     // Doctor Details
@@ -14,16 +15,22 @@ const appointmentSchema = mongoose.Schema({
     doctorImg: { type: String },
     fee: { type: Number },
 
-    // Patient Snapshot Details (Appointment ke waqt jo data tha)
+    // Patient Snapshot Details
     patientName: { type: String, required: true },
     age: { type: String },
     gender: { type: String },
     
-    // ✅ NEW FIELDS FROM FORM
-    phone: { type: String, required: true }, // Added Phone
-    address: { type: String, required: true }, // Added Address
+    // Contact Info
+    phone: { type: String, required: true },
+    address: { type: String, required: true },
     
-    type: { type: String, enum: ['myself', 'pet', 'other'], required: true },
+    // --- Type ---
+    // Change: 'Walk-in' aur 'Emergency' add kiya. Purane options (myself, pet) waise hi hain.
+    type: { 
+        type: String, 
+        enum: ['myself', 'pet', 'other', 'Walk-in', 'Emergency'], 
+        required: true 
+    },
     
     // Pet Specific
     petName: { type: String },
@@ -32,16 +39,21 @@ const appointmentSchema = mongoose.Schema({
     // Medical Details
     problem: { type: String },
     symptoms: { type: String },
-    
-    // ✅ Medical Report File (Base64 or URL)
     medicalReport: { type: String }, 
 
     // Scheduling
-    date: { type: String, required: true },
+    date: { type: String, required: true }, // Format: YYYY-MM-DD
     day: { type: String },
     time: { type: String, required: true },
     
-    status: { type: String, enum: ['Scheduled', 'Completed', 'Cancelled'], default: 'Scheduled' },
+    // --- Status ---
+    // Change: Receptionist flow ke liye 'Waiting', 'Checked-in' add kiye.
+    status: { 
+        type: String, 
+        enum: ['Scheduled', 'Completed', 'Cancelled', 'Waiting', 'Checked-in', 'With Doctor'], 
+        default: 'Scheduled' 
+    },
+    
     paymentStatus: { type: String, enum: ['Pending', 'Paid'], default: 'Paid' }
 }, { timestamps: true });
 

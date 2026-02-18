@@ -1,5 +1,8 @@
 const Patient = require('../models/Patient');
 
+const Appointment = require('../models/Appointment');
+const Doctor = require('../models/Doctor');
+
 // ==========================================
 // 1. GET ALL PATIENTS (For List View)
 // ==========================================
@@ -66,5 +69,103 @@ exports.searchPatient = async (req, res) => {
         res.json(results);
     } catch (err) {
         res.status(500).json({ message: "Search failed" });
+    }
+};
+
+// ==========================================
+// 1. GET ALL APPOINTMENTS (Filtered by Date)
+// ==========================================
+exports.getAppointments = async (req, res) => {
+    try {
+        const { date } = req.query;
+        let query = {};
+
+        // Agar date mili toh filter karo, nahi toh saare le aao
+        if (date) {
+            query.date = date;
+        }
+
+        // Time ke hisaab se sort karke bhejo
+        const appointments = await Appointment.find(query).sort({ time: 1 });
+        
+        res.status(200).json(appointments);
+    } catch (err) {
+        console.error("Fetch Error:", err);
+        res.status(500).json({ message: "Appointments load nahi huye." });
+    }
+};
+
+// ==========================================
+// 2. BOOK NEW APPOINTMENT (Receptionist)
+// ==========================================
+exports.bookAppointment = async (req, res) => {
+    try {
+        // Frontend se jo data aa raha hai
+        const { name, contact, date, time, doctor, type, reason } = req.body;
+
+        // Naya appointment create karo
+        const newAppointment = new Appointment({
+            // Receptionist booking mein 'user' field khali rahega (kyunki yeh walk-in hai)
+            
+            patientName: name,      
+            phone: contact,         // Schema mein 'phone' required hai
+            address: "Clinic Visit", // Default address daal rahe hain taaki validation pass ho
+            
+            doctorName: doctor,     // Doctor ka naam string mein save kar rahe hain
+            
+            date,
+            time,
+            // Automatic Day Calculation (e.g., 'Monday')
+            day: new Date(date).toLocaleDateString('en-US', { weekday: 'long' }),
+
+            type: type || 'Walk-in', // Agar type nahi aaya to default Walk-in
+            status: 'Waiting',       // Walk-in patient pehle waiting mein jayega
+            
+            problem: reason || "General Visit",
+            paymentStatus: 'Pending'
+        });
+
+        const savedAppt = await newAppointment.save();
+        res.status(201).json(savedAppt);
+
+    } catch (err) {
+        console.error("Booking Error:", err.message);
+        res.status(400).json({ message: "Booking Failed: " + err.message });
+    }
+};
+
+// ==========================================
+// 3. UPDATE STATUS (Check-in / Cancel)
+// ==========================================
+exports.updateAppointmentStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        const updatedAppt = await Appointment.findByIdAndUpdate(
+            id, 
+            { status }, 
+            { new: true, runValidators: true } // runValidators ensures enum check
+        );
+
+        if (!updatedAppt) {
+            return res.status(404).json({ message: "Appointment nahi mila." });
+        }
+
+        res.status(200).json(updatedAppt);
+
+    } catch (err) {
+        res.status(500).json({ message: "Status update fail ho gaya." });
+    }
+};
+
+// 4. GET ALL DOCTORS LIST (For Dropdown)
+exports.getDoctorsList = async (req, res) => {
+    try {
+        // Humein sirf Naam, ID aur Speciality chahiye
+        const doctors = await Doctor.find({}).select('name speciality _id');
+        res.status(200).json(doctors);
+    } catch (err) {
+        res.status(500).json({ message: "Doctors list load nahi huyi" });
     }
 };
