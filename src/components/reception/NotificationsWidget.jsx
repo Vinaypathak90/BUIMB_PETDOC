@@ -1,60 +1,80 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Bell, X, CheckCircle, AlertTriangle, Info, 
-  Trash2, Check, Clock 
+  Bell, Check, Trash2, AlertTriangle, Info, CheckCircle, 
+  Clock, X
 } from 'lucide-react';
 
-const INITIAL_NOTIFICATIONS = [
-  { id: 1, title: 'New Appointment', msg: 'Dr. Aditya has a new booking at 2:00 PM.', type: 'info', time: '2 min ago', read: false },
-  { id: 2, title: 'Emergency Alert', msg: 'Trauma case arriving in 5 mins. Prep Room 3.', type: 'alert', time: '10 min ago', read: false },
-  { id: 3, title: 'System Update', msg: 'Server maintenance scheduled at 12:00 AM.', type: 'neutral', time: '1 hr ago', read: true },
-];
-
 const NotificationsWidget = () => {
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState([]);
   const [filter, setFilter] = useState('all'); // all, unread
 
-  // --- SIMULATE LIVE NOTIFICATIONS ---
+  // --- FETCH DATA ---
+  const fetchNotifications = async () => {
+    try {
+      const userData = JSON.parse(localStorage.getItem('user_token'));
+      // Add a limit query if backend supports it, or just slice later
+      const res = await fetch('http://localhost:5000/api/notifications', {
+        headers: { 'Authorization': `Bearer ${userData?.token}` }
+      });
+      const data = await res.json();
+      if (res.ok) setNotifications(data);
+    } catch (err) {
+      console.error("Failed to load notifications");
+    }
+  };
+
+  // --- AUTO REFRESH (Live Effect) ---
   useEffect(() => {
-    const interval = setInterval(() => {
-      const types = ['info', 'alert', 'success'];
-      const titles = ['Walk-in Registered', 'Payment Received', 'Low Stock Alert', 'Doctor Checked In'];
-      const msgs = ['New patient added to queue.', 'Invoice #INV-2024 paid.', 'Paracetamol stock is low.', 'Dr. Priya is now Online.'];
-      
-      const randomType = types[Math.floor(Math.random() * types.length)];
-      const randomIndex = Math.floor(Math.random() * titles.length);
-
-      const newNotif = {
-        id: Date.now(),
-        title: titles[randomIndex],
-        msg: msgs[randomIndex],
-        type: randomType,
-        time: 'Just now',
-        read: false
-      };
-
-      // Add new notification to top
-      setNotifications(prev => [newNotif, ...prev].slice(0, 10)); // Keep max 10
-    }, 15000); // New alert every 15 seconds
-
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 15000); // Poll every 15s
     return () => clearInterval(interval);
   }, []);
 
   // --- ACTIONS ---
-  const markAsRead = (id) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  const markAsRead = async (id) => {
+    // Optimistic Update
+    setNotifications(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
+    try {
+        const userData = JSON.parse(localStorage.getItem('user_token'));
+        await fetch(`http://localhost:5000/api/notifications/${id}/read`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${userData?.token}` }
+        });
+    } catch (err) { console.error("API Error"); }
   };
 
-  const markAllRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  const deleteNotification = async (id) => {
+    // Optimistic Update
+    setNotifications(prev => prev.filter(n => n._id !== id));
+    try {
+        const userData = JSON.parse(localStorage.getItem('user_token'));
+        await fetch(`http://localhost:5000/api/notifications/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${userData?.token}` }
+        });
+    } catch (err) { console.error("API Error"); }
   };
 
-  const deleteNotification = (id) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+  const markAllRead = async () => {
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    try {
+        const userData = JSON.parse(localStorage.getItem('user_token'));
+        await fetch(`http://localhost:5000/api/notifications/all/read`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${userData?.token}` }
+        });
+    } catch (err) { console.error("API Error"); }
   };
 
-  const clearAll = () => {
+  const clearAll = async () => {
     setNotifications([]);
+    try {
+        const userData = JSON.parse(localStorage.getItem('user_token'));
+        await fetch(`http://localhost:5000/api/notifications/all`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${userData?.token}` }
+        });
+    } catch (err) { console.error("API Error"); }
   };
 
   // --- HELPER: STYLES ---
@@ -70,8 +90,20 @@ const NotificationsWidget = () => {
     return 'bg-blue-50 border-blue-100';
   };
 
-  const displayedList = filter === 'unread' ? notifications.filter(n => !n.read) : notifications;
-  const unreadCount = notifications.filter(n => !n.read).length;
+  // Helper to format date relative (e.g., "2 mins ago")
+  const formatTime = (isoString) => {
+      const date = new Date(isoString);
+      const now = new Date();
+      const diffInSeconds = Math.floor((now - date) / 1000);
+
+      if (diffInSeconds < 60) return 'Just now';
+      if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} min ago`;
+      if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hr ago`;
+      return date.toLocaleDateString();
+  };
+
+  const displayedList = filter === 'unread' ? notifications.filter(n => !n.isRead) : notifications;
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   return (
     <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full max-h-[400px]">
@@ -107,16 +139,16 @@ const NotificationsWidget = () => {
                 <p className="text-xs font-bold">No notifications</p>
             </div>
         ) : (
-            displayedList.map((notif) => (
+            displayedList.slice(0, 10).map((notif) => ( // Limit to 10 for widget
                 <div 
-                    key={notif.id} 
-                    onClick={() => markAsRead(notif.id)}
+                    key={notif._id} 
+                    onClick={() => markAsRead(notif._id)}
                     className={`relative p-3 rounded-2xl border transition-all group cursor-pointer hover:shadow-md animate-in slide-in-from-right-2 duration-300
-                        ${notif.read ? 'bg-white border-slate-100 opacity-70 grayscale-[0.5]' : getBg(notif.type)}
+                        ${notif.isRead ? 'bg-white border-slate-100 opacity-70 grayscale-[0.5]' : getBg(notif.type)}
                     `}
                 >
                     {/* Unread Dot */}
-                    {!notif.read && <div className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>}
+                    {!notif.isRead && <div className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>}
                     
                     <div className="flex gap-3">
                         <div className="mt-0.5 p-1.5 bg-white rounded-full h-fit shadow-sm border border-slate-100">
@@ -124,17 +156,17 @@ const NotificationsWidget = () => {
                         </div>
                         <div className="flex-1">
                             <div className="flex justify-between items-start pr-4">
-                                <h4 className={`text-xs font-bold ${notif.read ? 'text-slate-500' : 'text-slate-800'}`}>{notif.title}</h4>
+                                <h4 className={`text-xs font-bold ${notif.isRead ? 'text-slate-500' : 'text-slate-800'}`}>{notif.title}</h4>
                             </div>
                             <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">{notif.msg}</p>
                             <p className="text-[9px] text-slate-400 font-bold mt-1 flex items-center gap-1">
-                                <Clock size={8}/> {notif.time}
+                                <Clock size={8}/> {formatTime(notif.createdAt)}
                             </p>
                         </div>
                         
                         {/* Delete Button (Visible on Hover) */}
                         <button 
-                            onClick={(e) => { e.stopPropagation(); deleteNotification(notif.id); }}
+                            onClick={(e) => { e.stopPropagation(); deleteNotification(notif._id); }}
                             className="absolute bottom-2 right-2 p-1.5 text-slate-300 hover:text-red-500 hover:bg-white rounded-lg transition-all opacity-0 group-hover:opacity-100"
                         >
                             <X size={12}/>

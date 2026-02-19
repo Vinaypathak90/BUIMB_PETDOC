@@ -7,7 +7,9 @@ const {
     searchPatient,
     getAppointments, bookAppointment, updateAppointmentStatus ,
     getDoctorsList,bookWalkIn,
-getLiveQueue
+getLiveQueue,  getDailyReport,getReceptionistList, 
+    updateReceptionistProfile,
+    changePassword
 } = require('../controllers/receptionistController');
 const { 
     getAllDoctors, 
@@ -21,6 +23,7 @@ const {
     getAllInvoices, 
     searchInvoices 
 } = require('../controllers/billingController');
+
 
 
 // --- Patient Management Routes ---
@@ -48,5 +51,13 @@ router.post('/book-walk-in', protect, bookWalkIn);
 router.post('/billing/create', protect, createInvoice);   // Save Invoice
 router.get('/billing/history', protect, getAllInvoices);  // Get List
 router.get('/billing/search', protect, searchInvoices);   // Search List
+// 📊 REPORT ROUTE
+router.get('/reports/daily', protect, getDailyReport);
+
+// --- PROFILE ROUTES ---
+// Uses getReceptionistList as you requested
+router.get('/profile', protect, getReceptionistList); 
+router.put('/profile', protect, updateReceptionistProfile);
+router.put('/change-password', protect, changePassword);
 
 module.exports = router;

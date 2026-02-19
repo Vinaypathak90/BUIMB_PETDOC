@@ -1,8 +1,9 @@
 const Patient = require('../models/Patient');
-
+const User = require('../models/User');
 const Appointment = require('../models/Appointment');
 const Doctor = require('../models/Doctor');
-
+const Invoice = require('../models/Invoice');
+const bcrypt = require('bcryptjs');
 // ==========================================
 // 1. GET ALL PATIENTS (For List View)
 // ==========================================
@@ -256,5 +257,203 @@ exports.bookWalkIn = async (req, res) => {
     } catch (err) {
         console.error("Booking Error:", err);
         res.status(500).json({ message: "Registration failed: " + err.message });
+    }
+};
+// ==========================================
+// 7. GET DAILY REPORTS (Stats & Charts)
+// ==========================================
+exports.getDailyReport = async (req, res) => {
+    try {
+        // 1. Define "Today's" Time Range
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        
+        const endOfDay = new Date();
+        endOfDay.setHours(23, 59, 59, 999);
+
+        // 2. Fetch Today's Appointments & Invoices
+        const appointments = await Appointment.find({
+            date: new Date().toISOString().split('T')[0] // Match string date YYYY-MM-DD
+        });
+
+        const invoices = await Invoice.find({
+            createdAt: { $gte: startOfDay, $lte: endOfDay }
+        });
+
+        // 3. CALCULATE SUMMARY METRICS
+        const served = appointments.filter(a => ['Completed', 'Checked-in', 'With Doctor'].includes(a.status)).length;
+        const noShows = appointments.filter(a => ['Cancelled', 'No-Show'].includes(a.status)).length;
+        
+        const totalRevenue = invoices.reduce((sum, inv) => sum + (inv.grandTotal || 0), 0);
+
+        // 4. CALCULATE HOURLY TRAFFIC
+        // Initialize 9 AM to 5 PM with 0
+        let hourlyMap = { "09": 0, "10": 0, "11": 0, "12": 0, "13": 0, "14": 0, "15": 0, "16": 0, "17": 0 };
+        
+        appointments.forEach(app => {
+            if (app.time) {
+                // Assuming time is "09:30 AM" or "14:00" -> extract hour
+                const hour = app.time.split(':')[0]; 
+                // Normalize 12-hour format if needed, but assuming standard storage
+                if (hourlyMap[hour] !== undefined) hourlyMap[hour]++;
+            }
+        });
+
+        // Find Peak Hour
+        const peakHourKey = Object.keys(hourlyMap).reduce((a, b) => hourlyMap[a] > hourlyMap[b] ? a : b);
+        const peakHourVal = hourlyMap[peakHourKey];
+        const peakHourLabel = `${peakHourKey}:00 - ${parseInt(peakHourKey)+1}:00`;
+
+        // Format for Frontend Bar Chart
+        const hourlyTraffic = Object.keys(hourlyMap).map(hour => ({
+            time: `${hour > 12 ? hour - 12 : hour} ${hour >= 12 ? 'PM' : 'AM'}`,
+            count: hourlyMap[hour]
+        }));
+
+        // 5. CALCULATE STATUS BREAKDOWN
+        const statusCounts = {
+            'Served': served,
+            'Waiting': appointments.filter(a => a.status === 'Waiting').length,
+            'No-Show': noShows
+        };
+
+        res.status(200).json({
+            summary: {
+                served,
+                noShows,
+                revenue: totalRevenue,
+                peakHour: peakHourVal > 0 ? peakHourLabel : "No Data"
+            },
+            hourlyTraffic,
+            statusCounts
+        });
+
+    } catch (err) {
+        console.error("Report Error:", err);
+        res.status(500).json({ message: "Failed to generate report." });
+    }
+};
+
+// ==========================================
+// 1. GET PROFILE (Name changed as requested)
+// ==========================================
+// ==========================================
+// 1. GET PROFILE & DYNAMIC STATS
+// ==========================================
+exports.getReceptionistList = async (req, res) => {
+    try {
+        const userId = req.user._id || req.user.id; 
+        
+        // 1. Fetch User Profile
+        const user = await User.findById(userId).select('-password'); 
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found in Database' });
+        }
+
+        // 2. Calculate Dynamic Stats
+        // A. Total Patients Registered (Jo receptionist ne walk-in se add kiye)
+        // Agar aapke paas Patient model alag hai, toh usko count karo. Abhi ke liye hum appointments ke unique numbers count kar sakte hain ya total appointments.
+        const totalAppointments = await Appointment.countDocuments();
+        
+        // B. Appointments Booked Today (Aaj ke kitne bookings the)
+        const todayString = new Date().toISOString().split('T')[0];
+        const todayAppointments = await Appointment.countDocuments({ date: todayString });
+
+        // C. Calculate Hours Logged (Basic logic: User kab bana tha wahan se days nikal kar * 8 hours)
+        const joinDate = new Date(user.createdAt);
+        const currentDate = new Date();
+        const diffTime = Math.abs(currentDate - joinDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        const hoursLogged = diffDays * 8; // Assuming 8 hours shift per day since joining
+
+        // Generate dynamic employee ID if empty
+        const dynamicEmpId = user.empId || `EMP-${user._id.toString().slice(-4).toUpperCase()}`;
+
+        res.status(200).json({
+            // User Data
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            phone: user.phone || "", 
+            address: user.address || "",
+            role: user.role,
+            empId: dynamicEmpId,
+            status: user.status || "Online",
+            joinDate: user.createdAt,
+            
+            // Stats Data
+            stats: {
+                totalRegistered: totalAppointments, // Ya Patient.countDocuments() agar alag model hai
+                appointmentsBooked: todayAppointments,
+                hoursLogged: `${hoursLogged}h`
+            }
+        });
+
+    } catch (error) {
+        console.error("Profile Fetch Error:", error);
+        res.status(500).json({ message: 'Server Error: ' + error.message });
+    }
+};
+// ==========================================
+// 2. UPDATE PERSONAL INFO
+// ==========================================
+exports.updateReceptionistProfile = async (req, res) => {
+    try {
+        const userId = req.user._id || req.user.id;
+        const user = await User.findById(userId);
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Update fields if provided
+        user.name = req.body.name || user.name;
+        user.phone = req.body.phone !== undefined ? req.body.phone : user.phone;
+        user.address = req.body.address !== undefined ? req.body.address : user.address;
+
+        const updatedUser = await user.save();
+
+        res.status(200).json({
+            message: "Profile Updated Successfully",
+            user: {
+                name: updatedUser.name,
+                phone: updatedUser.phone,
+                address: updatedUser.address
+            }
+        });
+    } catch (error) {
+        console.error("Profile Update Error:", error);
+        res.status(500).json({ message: 'Update failed' });
+    }
+};
+
+// ==========================================
+// 3. CHANGE PASSWORD
+// ==========================================
+exports.changePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        const userId = req.user._id || req.user.id;
+
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        // 1. Verify Current Password
+        const isMatch = await bcrypt.compare(currentPassword, user.password);
+        if (!isMatch) {
+            return res.status(401).json({ message: 'Incorrect current password' });
+        }
+
+        // 2. Hash New Password
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(newPassword, salt);
+
+        await user.save();
+        res.status(200).json({ message: 'Password updated successfully. Please login again if needed.' });
+
+    } catch (error) {
+        console.error("Password Change Error:", error);
+        res.status(500).json({ message: 'Password update failed' });
     }
 };

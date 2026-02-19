@@ -1,61 +1,92 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Bell, Check, Trash2, AlertTriangle, Info, CheckCircle, 
-  Clock, X, Filter 
+  Clock, X
 } from 'lucide-react';
 
-const INITIAL_NOTIFICATIONS = [
-  { id: 1, title: 'New Appointment', msg: 'Dr. Aditya has a new booking at 2:00 PM.', type: 'info', time: '2 min ago', read: false },
-  { id: 2, title: 'Emergency Alert', msg: 'Trauma case arriving in 5 mins. Prep Room 3.', type: 'alert', time: '10 min ago', read: false },
-  { id: 3, title: 'System Update', msg: 'Server maintenance scheduled at 12:00 AM.', type: 'neutral', time: '1 hr ago', read: true },
-  { id: 4, title: 'Payment Received', msg: 'Invoice #INV-2099 settled by UPI.', type: 'success', time: '2 hrs ago', read: true },
-];
-
 const NotificationsPage = () => {
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState([]);
   const [filter, setFilter] = useState('all'); // all, unread, alert
+  const [loading, setLoading] = useState(true);
 
-  // --- SIMULATE LIVE DATA ---
+  // --- FETCH DATA ---
+  const fetchNotifications = async () => {
+    try {
+      const userData = JSON.parse(localStorage.getItem('user_token'));
+      const res = await fetch('http://localhost:5000/api/notifications', {
+        headers: { 'Authorization': `Bearer ${userData?.token}` }
+      });
+      const data = await res.json();
+      if (res.ok) setNotifications(data);
+    } catch (err) {
+      console.error("Failed to load notifications");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const interval = setInterval(() => {
-      const types = ['info', 'alert', 'success'];
-      const titles = ['New Patient', 'Stock Alert', 'Lab Report Ready'];
-      const msgs = ['Walk-in patient registered.', 'Cotton rolls running low.', 'Blood test results available.'];
-      const randomType = types[Math.floor(Math.random() * types.length)];
-      
-      const newNotif = {
-        id: Date.now(),
-        title: titles[Math.floor(Math.random() * titles.length)],
-        msg: msgs[Math.floor(Math.random() * msgs.length)],
-        type: randomType,
-        time: 'Just now',
-        read: false
-      };
-      setNotifications(prev => [newNotif, ...prev]);
-    }, 10000); // New notification every 10s
+    fetchNotifications();
+    // Optional: Poll every 30s for new updates
+    const interval = setInterval(fetchNotifications, 30000); 
     return () => clearInterval(interval);
   }, []);
 
   // --- ACTIONS ---
-  const markAsRead = (id) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  const markAsRead = async (id) => {
+    // Optimistic Update
+    setNotifications(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
+    
+    try {
+        const userData = JSON.parse(localStorage.getItem('user_token'));
+        await fetch(`http://localhost:5000/api/notifications/${id}/read`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${userData?.token}` }
+        });
+    } catch (err) { console.error("API Error"); }
   };
 
-  const deleteNotification = (id) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
+  const deleteNotification = async (id) => {
+    if(!window.confirm("Delete this notification?")) return;
+    
+    // Optimistic Update
+    setNotifications(prev => prev.filter(n => n._id !== id));
+
+    try {
+        const userData = JSON.parse(localStorage.getItem('user_token'));
+        await fetch(`http://localhost:5000/api/notifications/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${userData?.token}` }
+        });
+    } catch (err) { console.error("API Error"); }
   };
 
-  const markAllRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  const markAllRead = async () => {
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    try {
+        const userData = JSON.parse(localStorage.getItem('user_token'));
+        await fetch(`http://localhost:5000/api/notifications/all/read`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${userData?.token}` }
+        });
+    } catch (err) { console.error("API Error"); }
   };
 
-  const clearAll = () => {
-    if(window.confirm("Clear all notifications?")) setNotifications([]);
+  const clearAll = async () => {
+    if(!window.confirm("Clear all notifications?")) return;
+    setNotifications([]);
+    try {
+        const userData = JSON.parse(localStorage.getItem('user_token'));
+        await fetch(`http://localhost:5000/api/notifications/all`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${userData?.token}` }
+        });
+    } catch (err) { console.error("API Error"); }
   };
 
   // --- FILTERING ---
   const filteredList = notifications.filter(n => {
-    if (filter === 'unread') return !n.read;
+    if (filter === 'unread') return !n.isRead;
     if (filter === 'alert') return n.type === 'alert';
     return true;
   });
@@ -64,6 +95,12 @@ const NotificationsPage = () => {
     if (type === 'alert') return <AlertTriangle size={20} className="text-red-500" />;
     if (type === 'success') return <CheckCircle size={20} className="text-emerald-500" />;
     return <Info size={20} className="text-blue-500" />;
+  };
+
+  // Helper to format date
+  const formatTime = (isoString) => {
+      const date = new Date(isoString);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   return (
@@ -103,7 +140,9 @@ const NotificationsPage = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-3">
-            {filteredList.length === 0 ? (
+            {loading ? (
+                <div className="text-center py-10 text-slate-400 text-sm">Loading...</div>
+            ) : filteredList.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-slate-400">
                     <Bell size={48} className="opacity-20 mb-4"/>
                     <p className="font-bold text-sm">No new notifications.</p>
@@ -111,11 +150,11 @@ const NotificationsPage = () => {
             ) : (
                 filteredList.map(notif => (
                     <div 
-                        key={notif.id} 
-                        onClick={() => markAsRead(notif.id)}
+                        key={notif._id} 
+                        onClick={() => markAsRead(notif._id)}
                         className={`flex gap-4 p-4 rounded-2xl border transition-all cursor-pointer group hover:shadow-md
-                            ${notif.read ? 'bg-white border-slate-100 opacity-60' : 'bg-blue-50/30 border-blue-100'}
-                            ${notif.type === 'alert' && !notif.read ? 'bg-red-50/50 border-red-100' : ''}
+                            ${notif.isRead ? 'bg-white border-slate-100 opacity-60' : 'bg-blue-50/30 border-blue-100'}
+                            ${notif.type === 'alert' && !notif.isRead ? 'bg-red-50/50 border-red-100' : ''}
                         `}
                     >
                         <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 
@@ -126,14 +165,14 @@ const NotificationsPage = () => {
                         
                         <div className="flex-1">
                             <div className="flex justify-between items-start">
-                                <h4 className={`text-sm font-bold ${notif.read ? 'text-slate-600' : 'text-slate-900'}`}>{notif.title}</h4>
-                                <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Clock size={10}/> {notif.time}</span>
+                                <h4 className={`text-sm font-bold ${notif.isRead ? 'text-slate-600' : 'text-slate-900'}`}>{notif.title}</h4>
+                                <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1"><Clock size={10}/> {formatTime(notif.createdAt)}</span>
                             </div>
                             <p className="text-xs text-slate-500 mt-1">{notif.msg}</p>
                         </div>
 
                         <button 
-                            onClick={(e) => { e.stopPropagation(); deleteNotification(notif.id); }}
+                            onClick={(e) => { e.stopPropagation(); deleteNotification(notif._id); }}
                             className="text-slate-300 hover:text-red-500 hover:bg-slate-100 p-2 rounded-full h-fit transition-all opacity-0 group-hover:opacity-100"
                         >
                             <X size={16}/>
