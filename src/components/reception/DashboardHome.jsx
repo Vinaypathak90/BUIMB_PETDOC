@@ -3,23 +3,12 @@ import {
   Users, Calendar, Clock, Stethoscope, Wallet, 
   Plus, FileText, UserPlus, CalendarPlus, CheckSquare, 
   CheckCircle, XCircle, ChevronRight, Video, MapPin, 
-  Trash2, AlertTriangle, Activity, Coffee
+  Trash2, AlertTriangle, Activity, Coffee, Loader2
 } from 'lucide-react';
 import NotificationsWidget from './NotificationsWidget'; 
 
 // ==========================================
-// 1. MOCK DATA & CONSTANTS
-// ==========================================
-
-const INITIAL_DOCTORS = [
-  { id: 1, name: "Dr. Aditya Sharma", dept: "Cardio", room: "204", status: "Busy", avatar: "AS" },
-  { id: 2, name: "Dr. Priya Varma", dept: "General", room: "101", status: "Available", avatar: "PV" },
-  { id: 3, name: "Dr. Sameer Khan", dept: "Ortho", room: "305", status: "Break", avatar: "SK" },
-  { id: 4, name: "Dr. Edalin Hendry", dept: "Dental", room: "104", status: "Available", avatar: "EH" },
-];
-
-// ==========================================
-// 2. REUSABLE UI COMPONENTS
+// 1. REUSABLE UI COMPONENTS
 // ==========================================
 
 const StatCard = ({ item }) => {
@@ -49,6 +38,9 @@ const StatCard = ({ item }) => {
 
 // --- COMPACT DOCTOR LIST ITEM ---
 const DoctorMiniItem = ({ doc, onToggle }) => {
+  // Normalize status string (sometimes backend sends 'available', sometimes 'Available')
+  const status = doc.status ? doc.status.charAt(0).toUpperCase() + doc.status.slice(1).toLowerCase() : 'Unknown';
+
   const getStatusColor = (s) => {
     if(s === 'Available') return 'bg-emerald-100 text-emerald-700 border-emerald-200';
     if(s === 'Busy') return 'bg-amber-100 text-amber-700 border-amber-200';
@@ -60,28 +52,28 @@ const DoctorMiniItem = ({ doc, onToggle }) => {
         <div className="flex items-center gap-3">
             <div className="relative">
                 <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-xs font-black text-slate-500 border border-slate-200">
-                    {doc.avatar}
+                    {doc.avatar || "D"}
                 </div>
                 {/* Online Indicator */}
                 <div className={`absolute -bottom-1 -right-1 w-4 h-4 border-2 border-white rounded-full flex items-center justify-center
-                    ${doc.status === 'Available' ? 'bg-emerald-500' : doc.status === 'Busy' ? 'bg-amber-500' : 'bg-red-500'}
+                    ${status === 'Available' ? 'bg-emerald-500' : status === 'Busy' ? 'bg-amber-500' : 'bg-red-500'}
                 `}>
-                    {doc.status === 'Busy' && <Activity size={8} className="text-white"/>}
-                    {doc.status === 'Break' && <Coffee size={8} className="text-white"/>}
+                    {status === 'Busy' && <Activity size={8} className="text-white"/>}
+                    {status === 'Break' && <Coffee size={8} className="text-white"/>}
                 </div>
             </div>
             <div>
                 <h4 className="text-xs font-bold text-slate-800">{doc.name}</h4>
                 <p className="text-[9px] font-bold text-slate-400 uppercase flex items-center gap-1">
-                    <MapPin size={8}/> Room {doc.room} • {doc.dept}
+                    <MapPin size={8}/> Room {doc.room || 'N/A'} • {doc.dept || 'General'}
                 </p>
             </div>
         </div>
         <button 
-            onClick={() => onToggle(doc.id)}
-            className={`text-[9px] font-black px-2 py-1 rounded-lg border uppercase transition-all active:scale-95 ${getStatusColor(doc.status)}`}
+            onClick={() => onToggle(doc.id, status)}
+            className={`text-[9px] font-black px-2 py-1 rounded-lg border uppercase transition-all active:scale-95 ${getStatusColor(status)}`}
         >
-            {doc.status}
+            {status}
         </button>
     </div>
   );
@@ -95,13 +87,13 @@ const AppointmentMiniCard = ({ appt, onCheckIn }) => {
              <Clock size={12} className="text-[#00d0f1]"/> {appt.time || '10:00 AM'}
           </span>
           <span className={`text-[10px] font-bold px-2 py-1 rounded-full border flex items-center gap-1 
-            ${appt.type === 'Online' ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>
-             {appt.type === 'Online' ? <Video size={10}/> : <MapPin size={10}/>} {appt.type}
+            ${appt.type?.toLowerCase() === 'online' ? 'bg-purple-50 text-purple-600 border-purple-100' : 'bg-orange-50 text-orange-600 border-orange-100'}`}>
+             {appt.type?.toLowerCase() === 'online' ? <Video size={10}/> : <MapPin size={10}/>} {appt.type || 'Walk-in'}
           </span>
        </div>
        <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-500 font-black text-sm">
-            {appt.name.charAt(0)}
+            {appt.name ? appt.name.charAt(0).toUpperCase() : 'U'}
           </div>
           <div>
             <h4 className="font-bold text-slate-800 text-sm truncate w-32" title={appt.name}>{appt.name}</h4>
@@ -109,7 +101,7 @@ const AppointmentMiniCard = ({ appt, onCheckIn }) => {
           </div>
        </div>
        <div className="mt-auto pt-2">
-         {appt.status === 'Checked In' ? (
+         {appt.status === 'Checked In' || appt.status === 'Checked-in' ? (
             <div className="w-full py-2 bg-green-50 text-green-600 text-xs font-bold rounded-xl flex items-center justify-center gap-2 border border-green-100">
                 <CheckCircle size={14}/> Checked In
             </div>
@@ -136,11 +128,16 @@ const SmartQueueItem = ({ item }) => {
   useEffect(() => {
     const updateTimer = () => {
         const now = Date.now();
-        const diffMins = Math.floor((now - (item.checkInTime || now)) / 60000);
+        // Fallback to checking how long they have been in the queue if checkInTime is missing
+        const startTime = item.checkInTime || now; 
+        const diffMins = Math.floor((now - startTime) / 60000);
+        
         setWaited(`${diffMins}m`);
+        
         if (diffMins > 10) setColorClass("bg-yellow-100 text-yellow-600");
         if (diffMins > 25) setColorClass("bg-red-100 text-red-600");
     };
+    
     updateTimer();
     const interval = setInterval(updateTimer, 60000);
     return () => clearInterval(interval);
@@ -152,7 +149,7 @@ const SmartQueueItem = ({ item }) => {
     <div className={`flex items-center justify-between p-3 mb-2 bg-white border rounded-2xl shadow-sm transition-all group animate-in slide-in-from-bottom-2 ${isEmergency ? 'border-red-200 shadow-red-50' : 'border-slate-100 hover:border-[#00d0f1]'}`}>
       <div className="flex items-center gap-3">
         <div className={`w-10 h-10 rounded-xl flex flex-col items-center justify-center font-black text-xs shrink-0 border-2 ${isEmergency ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-50 text-slate-700 border-slate-200'}`}>
-          {item.token}
+          {item.token || "--"}
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
@@ -172,71 +169,160 @@ const SmartQueueItem = ({ item }) => {
 };
 
 // ==========================================
-// 3. MAIN DASHBOARD COMPONENT
+// 2. MAIN DASHBOARD COMPONENT
 // ==========================================
 
 const DashboardHome = ({ onNavigate }) => {
-  
   const [appointments, setAppointments] = useState([]);
-  const [doctors, setDoctors] = useState(INITIAL_DOCTORS);
+  const [doctors, setDoctors] = useState([]);
   const [stats, setStats] = useState({ total: 0, waiting: 0, doctors: 0, cancelled: 0, revenue: 0 });
+  const [isLoading, setIsLoading] = useState(true);
 
-  // --- 1. LOAD DATA ---
-  useEffect(() => {
-    const loadData = () => {
-        const storedData = JSON.parse(localStorage.getItem('reception_data')) || [];
-        setAppointments(storedData);
-        
-        const total = storedData.length;
-        const waiting = storedData.filter(d => d.status === 'Waiting').length;
-        const activeDocs = doctors.filter(d => d.status === 'Available').length;
-        const revenue = storedData.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
-        
-        setStats(prev => ({ ...prev, total, waiting, revenue, doctors: activeDocs }));
-    };
-    loadData();
-    const interval = setInterval(loadData, 5000);
-    return () => clearInterval(interval);
-  }, [doctors]);
-
-  // --- ACTIONS ---
-  const handleCheckIn = (id) => {
-    const updatedList = appointments.map(appt => 
-      appt.id === id ? { ...appt, status: 'Checked In' } : appt
-    );
-    setAppointments(updatedList);
-    localStorage.setItem('reception_data', JSON.stringify(updatedList));
-  };
-
-  const handleDelete = (id) => {
-    if (window.confirm("Delete record?")) {
-      const updatedList = appointments.filter(appt => appt.id !== id);
-      setAppointments(updatedList);
-      localStorage.setItem('reception_data', JSON.stringify(updatedList));
+  // --- HELPER: GET TOKEN ---
+  const getToken = () => {
+    const stored = localStorage.getItem('user_token');
+    if (!stored) return null;
+    try {
+        const parsed = JSON.parse(stored);
+        return parsed.token || parsed;
+    } catch(e) {
+        return stored;
     }
   };
 
-  // --- DOCTOR STATUS TOGGLE ---
-  const toggleDoctorStatus = (id) => {
-    const statusCycle = ['Available', 'Busy', 'Break'];
-    setDoctors(prev => prev.map(doc => {
-        if(doc.id === id) {
-            const nextIdx = (statusCycle.indexOf(doc.status) + 1) % statusCycle.length;
-            return { ...doc, status: statusCycle[nextIdx] };
+  // --- 1. FETCH DASHBOARD DATA ---
+  const fetchDashboardData = async () => {
+    try {
+        const token = getToken();
+        if(!token) {
+            console.error("No token found");
+            setIsLoading(false);
+            return;
         }
-        return doc;
-    }));
+
+        const res = await fetch('http://localhost:5000/api/receptionist/dashboard', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+            setAppointments(data.appointments || []);
+            setDoctors(data.doctors || []);
+            setStats(data.stats || { total: 0, waiting: 0, doctors: 0, cancelled: 0, revenue: 0 });
+        } else {
+            console.error("Dashboard error:", data.message);
+        }
+    } catch (err) {
+        console.error("Failed to load dashboard data", err);
+    } finally {
+        setIsLoading(false);
+    }
   };
 
+  // Load data on mount and poll every 15 seconds
+  useEffect(() => {
+    fetchDashboardData();
+    const interval = setInterval(fetchDashboardData, 15000); 
+    return () => clearInterval(interval);
+  }, []);
+
+  // --- ACTIONS ---
+
+  // Check In Appointment
+  const handleCheckIn = async (id) => {
+    try {
+        const token = getToken();
+        // Optimistic update
+        setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: 'Checked In', checkInTime: Date.now() } : a));
+
+        const res = await fetch(`http://localhost:5000/api/receptionist/dashboard/appointments/${id}/status`, {
+            method: 'PUT',
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ status: 'Checked In', checkInTime: Date.now() })
+        });
+        
+        if (!res.ok) fetchDashboardData(); // Revert if failed
+    } catch (err) {
+        alert("Failed to check in.");
+        fetchDashboardData();
+    }
+  };
+
+  // Delete Appointment
+  const handleDelete = async (id) => {
+    if (window.confirm("Are you sure you want to delete this record?")) {
+        try {
+            const token = getToken();
+            // Optimistic update
+            setAppointments(prev => prev.filter(a => a.id !== id));
+
+            const res = await fetch(`http://localhost:5000/api/receptionist/appointments/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (!res.ok) fetchDashboardData(); // Revert if failed
+        } catch (err) {
+            alert("Failed to delete.");
+            fetchDashboardData();
+        }
+    }
+  };
+
+  // Toggle Doctor Status
+  const toggleDoctorStatus = async (id, currentStatus) => {
+    try {
+        const token = getToken();
+        const cycle = ['Available', 'Busy', 'Break'];
+        const nextStatus = cycle[(cycle.indexOf(currentStatus) + 1) % cycle.length];
+
+        // Optimistic update
+        setDoctors(prev => prev.map(doc => doc.id === id ? { ...doc, status: nextStatus } : doc));
+
+        const res = await fetch(`http://localhost:5000/api/receptionist/dashboard/doctors/${id}/status`, {
+            method: 'PUT',
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ status: nextStatus })
+        });
+        
+        if (!res.ok) fetchDashboardData(); // Revert if failed
+    } catch (err) {
+        console.error("Status update failed");
+        fetchDashboardData();
+    }
+  };
+
+  // --- DERIVED DATA ---
+  // Active appointments for the top scrollable row
   const activeAppointments = appointments.filter(a => a.status !== 'Cancelled' && a.status !== 'Completed');
   
+  // Waiting queue sorting logic (Emergency first, then by check-in time)
   const waitingQueue = appointments
-    .filter(a => a.status === 'Waiting')
+    .filter(a => a.status === 'Waiting' || a.status === 'Checked In' || a.status === 'Checked-in')
     .sort((a, b) => {
         if (a.priority === 'Emergency' && b.priority !== 'Emergency') return -1;
         if (a.priority !== 'Emergency' && b.priority === 'Emergency') return 1;
         return (a.checkInTime || 0) - (b.checkInTime || 0);
     });
+
+  // Loader
+  if (isLoading) {
+      return (
+          <div className="flex h-[calc(100vh-100px)] items-center justify-center">
+              <div className="flex flex-col items-center gap-3">
+                 <Loader2 className="animate-spin text-[#00d0f1]" size={40}/>
+                 <p className="text-slate-500 font-bold text-sm">Syncing Live Data...</p>
+              </div>
+          </div>
+      );
+  }
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8 max-w-[100vw] overflow-x-hidden">
@@ -261,7 +347,7 @@ const DashboardHome = ({ onNavigate }) => {
         <StatCard item={{ label: "Waiting Queue", value: stats.waiting, icon: Clock, color: "orange" }} />
         <StatCard item={{ label: "Doctors Active", value: stats.doctors, icon: Stethoscope, color: "emerald" }} />
         <StatCard item={{ label: "Cancelled", value: stats.cancelled, icon: XCircle, color: "red" }} />
-        <StatCard item={{ label: "Net Revenue", value: `₹${stats.revenue}`, icon: Wallet, color: "purple" }} />
+        <StatCard item={{ label: "Net Revenue", value: `₹${stats.revenue.toLocaleString()}`, icon: Wallet, color: "purple" }} />
       </div>
 
       {/* 3. TODAY'S SCHEDULE */}
@@ -310,25 +396,34 @@ const DashboardHome = ({ onNavigate }) => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                        {appointments.map((appt, index) => (
-                            <tr key={index} className="hover:bg-slate-50/80 transition-colors group">
+                        {appointments.length === 0 && (
+                            <tr><td colSpan="5" className="text-center py-8 text-slate-400 font-bold text-sm">No records found for today.</td></tr>
+                        )}
+                        {appointments.map((appt) => (
+                            <tr key={appt.id} className="hover:bg-slate-50/80 transition-colors group">
                                 <td className="px-6 py-4 text-sm font-bold text-slate-500">
                                     <div className="flex items-center gap-2 bg-slate-100 w-fit px-2 py-1 rounded-lg"><Clock size={12}/> {appt.time}</div>
                                 </td>
                                 <td className="px-6 py-4">
                                     <p className="text-sm font-bold text-slate-800">{appt.name}</p>
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase">{appt.type}</p>
+                                    <p className="text-[10px] text-slate-400 font-bold uppercase">{appt.type || 'Walk-in'}</p>
                                 </td>
                                 <td className="px-6 py-4 text-sm font-medium text-slate-600">{appt.doctor}</td>
                                 <td className="px-6 py-4">
-                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border ${appt.status === 'Checked In' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-orange-100 text-orange-600 border-orange-200'}`}>
+                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase border 
+                                        ${(appt.status === 'Checked In' || appt.status === 'Checked-in' || appt.status === 'Completed') 
+                                            ? 'bg-green-100 text-green-700 border-green-200' 
+                                            : (appt.status === 'Cancelled' || appt.status === 'No-Show') 
+                                                ? 'bg-red-100 text-red-700 border-red-200' 
+                                                : 'bg-orange-100 text-orange-600 border-orange-200'}`}
+                                    >
                                         {appt.status}
                                     </span>
                                 </td>
                                 <td className="px-6 py-4 text-right">
                                     <div className="flex justify-end gap-2">
-                                        <button onClick={() => handleCheckIn(appt.id)} className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-500 hover:text-white transition-all border border-emerald-100"><CheckSquare size={16}/></button>
-                                        <button onClick={() => handleDelete(appt.id)} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all border border-red-100"><Trash2 size={16}/></button>
+                                        <button onClick={() => handleCheckIn(appt.id)} className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-500 hover:text-white transition-all border border-emerald-100" title="Check In"><CheckSquare size={16}/></button>
+                                        <button onClick={() => handleDelete(appt.id)} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-500 hover:text-white transition-all border border-red-100" title="Delete"><Trash2 size={16}/></button>
                                     </div>
                                 </td>
                             </tr>
@@ -349,14 +444,14 @@ const DashboardHome = ({ onNavigate }) => {
                     </h3>
                     <span className="bg-orange-100 text-orange-600 text-[10px] font-bold px-2 py-1 rounded-full">{stats.waiting}</span>
                 </div>
-                <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
                     {waitingQueue.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center text-slate-400">
                             <Clock size={32} className="opacity-20 mb-2"/>
                             <p className="text-xs font-bold">Queue is empty</p>
                         </div>
                     ) : (
-                        waitingQueue.map((item, idx) => <SmartQueueItem key={idx} item={item} />)
+                        waitingQueue.map((item) => <SmartQueueItem key={item.id} item={item} />)
                     )}
                 </div>
             </div>
@@ -369,15 +464,21 @@ const DashboardHome = ({ onNavigate }) => {
                     </h3>
                     <button onClick={() => onNavigate('doctors')} className="text-slate-400 hover:text-[#00d0f1]"><ChevronRight size={18}/></button>
                 </div>
-                <div className="space-y-2">
-                    {doctors.map(doc => (
-                        <DoctorMiniItem key={doc.id} doc={doc} onToggle={toggleDoctorStatus} />
-                    ))}
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                    {doctors.length === 0 ? (
+                         <div className="text-center text-slate-400 text-xs py-4 font-bold">No active doctors</div>
+                    ) : (
+                        doctors.map(doc => (
+                            <DoctorMiniItem key={doc.id} doc={doc} onToggle={toggleDoctorStatus} />
+                        ))
+                    )}
                 </div>
             </div>
-<div className="h-[300px]">
-        <NotificationsWidget />
-    </div>
+
+            {/* C. Notifications Widget */}
+            <div className="h-[300px]">
+                <NotificationsWidget />
+            </div>
         </div>
 
       </div>
@@ -385,4 +486,4 @@ const DashboardHome = ({ onNavigate }) => {
   );
 };
 
-export default DashboardHome;
+export default DashboardHome; 

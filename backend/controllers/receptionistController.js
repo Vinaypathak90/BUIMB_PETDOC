@@ -22,7 +22,9 @@ exports.getAllPatients = async (req, res) => {
 // ==========================================
 exports.registerPatient = async (req, res) => {
     try {
+        console.log("📥 Incoming Patient Data:", req.body);
         const { 
+            
             name, age, gender, phone, address, 
             type, ownerName, breed, medicalHistory 
         } = req.body;
@@ -37,7 +39,7 @@ exports.registerPatient = async (req, res) => {
             gender,
             phone,
             address,
-            type: type || 'Human', // Default to human if not sent
+            type: type || 'human', // Default to human if not sent
             ownerName: type === 'pet' ? ownerName : '',
             breed: type === 'pet' ? breed : '',
             medicalHistory: medicalHistory || '',

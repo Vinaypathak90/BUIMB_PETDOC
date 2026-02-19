@@ -25,6 +25,12 @@ const {
 } = require('../controllers/billingController');
 
 
+const { 
+getDashboardData, 
+    deleteAppointment,
+    updateDoctorStatus: updateDashboardDoctorStatus, // <-- NAYA NAAM
+    updateAppointmentStatus: updateDashboardApptStatus // <-- NAYA NAAM
+} = require('../controllers/dashboardController');
 
 // --- Patient Management Routes ---
 router.get('/patients', protect, getAllPatients);
@@ -60,4 +66,13 @@ router.get('/profile', protect, getReceptionistList);
 router.put('/profile', protect, updateReceptionistProfile);
 router.put('/change-password', protect, changePassword);
 
+router.get('/dashboard', protect, getDashboardData);
+
+
+router.delete('/appointments/:id', protect, deleteAppointment);
+
+router.put('/dashboard/appointments/:id/status', protect, updateDashboardApptStatus);
+
+
+router.put('/dashboard/doctors/:id/status', protect, updateDashboardDoctorStatus);
 module.exports = router;
