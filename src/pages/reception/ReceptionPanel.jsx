@@ -7,12 +7,11 @@ import AppointmentsList from '../../components/reception/AppointmentsList';
 import PatientsList from '../../components/reception/PatientsList';
 import LiveQueueSnapshot from '../../components/reception/LiveQueueSnapshot';
 
-import DoctorAvailability from '../../components/reception/DoctorAvailability'; // ✅ New Import
+import DoctorAvailability from '../../components/reception/DoctorAvailability'; 
 import BillingPanel from '../../components/reception/BillingPanel';
-import  NotificationsWidget from '../../components/reception/NotificationsWidget'; // ✅ New Import
-import NotificationsPage from '../../components/reception/NotificationsPage'; // ✅ New Import
+import NotificationsWidget from '../../components/reception/NotificationsWidget'; 
+import NotificationsPage from '../../components/reception/NotificationsPage'; 
 import DailyReports from '../../components/reception/DailyReports';
-
 import MyProfile from '../../components/reception/MyProfile';
 
 const ReceptionPanel = () => {
@@ -20,29 +19,83 @@ const ReceptionPanel = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [queueData, setQueueData] = useState([]);
 
+  // --- HELPER: GET TOKEN ---
+  const getToken = () => {
+      const storedData = localStorage.getItem('user_token');
+      if (!storedData) return null;
+      try {
+          const parsed = JSON.parse(storedData);
+          return parsed.token ? parsed.token : parsed;
+      } catch (e) {
+          return storedData;
+      }
+  };
+
   // ✅ Navigation Helper Function
   const handleNavigation = (tabName) => {
     setActiveTab(tabName);
   };
 
+  // ✅ Fetch Live Queue Data from Backend
+  const fetchQueueData = async () => {
+    try {
+        const token = getToken();
+        if(!token) return;
+
+        const res = await fetch('http://localhost:5000/api/receptionist/live-queue', {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+            setQueueData(data);
+        }
+    } catch (err) {
+        console.error("Failed to fetch live queue", err);
+    }
+  };
+
   // ✅ Effect: Refresh Queue Data when 'queue' tab is active
   useEffect(() => {
     if (activeTab === 'queue') {
-      const storedData = JSON.parse(localStorage.getItem('reception_data')) || [];
-      setQueueData(storedData.filter(item => item.status === 'Waiting'));
+        fetchQueueData();
+        // Optional: Auto-refresh queue every 15 seconds while on this tab
+        const interval = setInterval(fetchQueueData, 15000);
+        return () => clearInterval(interval);
     }
   }, [activeTab]);
 
   // ✅ Helper: Handle Status Update from Queue Page (e.g., Send to Doctor)
-  const handleQueueUpdate = (id, newStatus) => {
-    const allData = JSON.parse(localStorage.getItem('reception_data')) || [];
-    const updatedData = allData.map(item => 
-      item.id === id ? { ...item, status: newStatus } : item
-    );
-    localStorage.setItem('reception_data', JSON.stringify(updatedData));
-    
-    // Update local state to reflect change immediately
-    setQueueData(updatedData.filter(item => item.status === 'Waiting'));
+  const handleQueueUpdate = async (id, newStatus) => {
+    try {
+        const token = getToken();
+        
+        // Optimistic UI Update (Turant screen pe dikhane ke liye)
+        setQueueData(prev => prev.filter(item => 
+            // Agar completed ya cancelled ho gaya toh queue se hata do, warna status change karo
+            newStatus === 'Completed' || newStatus === 'Cancelled' ? false : (item._id !== id)
+        ));
+
+        // API Call
+        const res = await fetch(`http://localhost:5000/api/receptionist/appointments/${id}/status`, {
+            method: 'PUT',
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ status: newStatus })
+        });
+
+        if (!res.ok) {
+            // Agar API fail hui toh data wapas fetch kar lo purani state laane ke liye
+            fetchQueueData();
+            alert("Failed to update status.");
+        }
+    } catch (err) {
+        console.error("Status update error", err);
+        fetchQueueData();
+    }
   };
 
   return (
@@ -121,27 +174,31 @@ const ReceptionPanel = () => {
                         />
                     </div>
                 )}
-{/* 5. Doctor Availability View */}
-{activeTab === 'doctors' && (
-    <DoctorAvailability />
-)}
                 
-{/* 6. Billing Module */}
-{activeTab === 'billing' && (
-    <BillingPanel />
-)}
-{/*-* 7. Notifications View */}
-{activeTab === 'notifications' && (
-    <NotificationsPage />
-)}
-{/*- 7. Daily Reports View */}
-{activeTab === 'reports' && (
-    <DailyReports />
-)}
+                {/* 6. Doctor Availability View */}
+                {activeTab === 'doctors' && (
+                    <DoctorAvailability />
+                )}
+                                
+                {/* 7. Billing Module */}
+                {activeTab === 'billing' && (
+                    <BillingPanel />
+                )}
 
-{activeTab === 'profile' && (
-    <MyProfile />
-)}
+                {/* 8. Notifications View */}
+                {activeTab === 'notifications' && (
+                    <NotificationsPage />
+                )}
+
+                {/* 9. Daily Reports View */}
+                {activeTab === 'reports' && (
+                    <DailyReports />
+                )}
+
+                {/* 10. Profile View */}
+                {activeTab === 'profile' && (
+                    <MyProfile />
+                )}
 
             </div>
 
