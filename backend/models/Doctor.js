@@ -24,7 +24,7 @@ const doctorSchema = mongoose.Schema({
     status: { 
         type: String, 
         // Added 'off duty' to match your frontend toggle logic
-        enum: ['available', 'busy', 'break', 'off duty'], 
+        enum: ['available', 'busy', 'break', 'off duty' ,'active'], 
         default: 'available' 
     },
     // Used as 'nextSlot' in frontend

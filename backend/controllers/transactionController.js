@@ -5,20 +5,25 @@ const Transaction = require('../models/Transaction');
 // @access  Private
 exports.getMyTransactions = async (req, res) => {
     try {
-        // 👇 Log the ID of the user currently logged in (Check your VS Code Terminal for this!)
-        console.log("Logged in User ID:", req.user._id); 
-
-        // ❌ OLD LINE (Filters by specific user) - Comment this out
-        // const transactions = await Transaction.find({ user: req.user._id }).sort({ date: -1 });
-
-        // ✅ NEW LINE (Shows EVERYTHING for testing)
-        const transactions = await Transaction.find({}).sort({ date: -1 });
+        // 🚨 FIX: Safely extract ID whether it's saved as .id or ._id
+        const userId = req.user.id || req.user._id; 
         
-        console.log("Transactions found in DB:", transactions.length);
+        console.log("✅ Logged in User ID:", userId); 
+
+        // Agar token mein issue hai toh yahi rok do
+        if (!userId) {
+            return res.status(401).json({ message: "Unauthorized: User ID missing from token" });
+        }
+
+        // ✅ FIX: Wapas filter laga diya taaki user ko sirf APNE transactions dikhein
+        // Aur sort 'createdAt: -1' rakha hai taaki naye wale sabse upar aayen
+        const transactions = await Transaction.find({ user: userId }).sort({ createdAt: -1 });
+        
+        console.log(`Transactions found for this user: ${transactions.length}`);
 
         res.json(transactions);
     } catch (error) {
-        console.error("Error fetching transactions:", error);
+        console.error("❌ Error fetching transactions:", error);
         res.status(500).json({ message: "Server Error" });
     }
 };

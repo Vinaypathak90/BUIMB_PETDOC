@@ -19,11 +19,40 @@ exports.getDoctors = async (req, res) => {
 // @route   POST /api/admin/doctors
 exports.addDoctor = async (req, res) => {
     try {
-        const doctor = new Doctor(req.body);
-        const createdDoctor = await doctor.save();
-        res.status(201).json(createdDoctor);
+        console.log("📥 Incoming Doctor Data:", req.body);
+
+        // Extracting fields from frontend request
+        const { name, type, speciality, qualification, experience, fee, status, img, room } = req.body;
+
+        // Basic Validation
+        if (!name || !speciality) {
+            return res.status(400).json({ message: "Name and Speciality are required." });
+        }
+
+        const newDoctor = new Doctor({
+            name,
+            type: type ? type.toLowerCase() : 'human', // Convert to lowercase for DB enum
+            speciality,
+            qualification: qualification || "MBBS",
+            experience: experience || "0",
+            fee: Number(fee) || 0,
+            status: status ? status.toLowerCase() : 'available',
+            img: img || "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
+            room: room || "General"
+        });
+
+        const savedDoctor = await newDoctor.save();
+        console.log("✅ Doctor Added Successfully:", savedDoctor._id);
+        res.status(201).json(savedDoctor);
+
     } catch (error) {
-        res.status(400).json({ message: error.message });
+        console.error("❌ Add Doctor Error:", error);
+        // If it's a validation error, send the exact missing field
+        if (error.name === 'ValidationError') {
+             const messages = Object.values(error.errors).map(val => val.message);
+             return res.status(400).json({ message: messages.join(', ') });
+        }
+        res.status(400).json({ message: "Validation Failed", error: error.message });
     }
 };
 
@@ -31,10 +60,26 @@ exports.addDoctor = async (req, res) => {
 // @route   PUT /api/admin/doctors/:id
 exports.updateDoctor = async (req, res) => {
     try {
-        const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, { new: true });
-        if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
-        res.json(doctor);
+        console.log(`📥 Updating Doctor ${req.params.id}:`, req.body);
+        
+        // Ensure type and status are formatted correctly before updating
+        if (req.body.type) req.body.type = req.body.type.toLowerCase();
+        if (req.body.status) req.body.status = req.body.status.toLowerCase();
+
+        const doctor = await Doctor.findByIdAndUpdate(
+            req.params.id, 
+            req.body, 
+            { new: true, runValidators: true } // runValidators ensures updated data respects Schema rules
+        );
+
+        if (!doctor) {
+            return res.status(404).json({ message: 'Doctor not found' });
+        }
+        
+        console.log("✅ Doctor Updated Successfully");
+        res.status(200).json(doctor);
     } catch (error) {
+        console.error("❌ Update Doctor Error:", error);
         res.status(400).json({ message: error.message });
     }
 };
