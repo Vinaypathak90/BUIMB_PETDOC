@@ -40,5 +40,7 @@ const patientSchema = mongoose.Schema({
         default: 'active' 
     }
 }, { timestamps: true });
+// Fast sorting ke liye index
+patientSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model('Patient', patientSchema);

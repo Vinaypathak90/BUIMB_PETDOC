@@ -97,81 +97,126 @@ exports.deleteDoctor = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
+// ==========================================
+// 1. GET ALL PATIENTS
+// ==========================================
 exports.getPatients = async (req, res) => {
     try {
-        const patients = await Patient.find().sort({ createdAt: -1 });
-        res.json(patients);
+        const patients = await Patient.find()
+            .sort({ createdAt: -1 })
+            .setOptions({ allowDiskUse: true }); // Memory limit crash se bachne ke liye
+        
+        // Frontend ko .id chahiye delete function ke liye (`patient.id`)
+        const formattedPatients = patients.map(p => ({
+            ...p._doc,
+            id: p._id // Map _id to id so your React table delete button works perfectly
+        }));
+
+        res.status(200).json(formattedPatients);
     } catch (error) {
-        res.status(500).json({ message: "Error fetching patients" });
+        console.error("❌ Fetch Patients Error:", error.message);
+        res.status(500).json({ message: "Failed to load patients" });
     }
 };
+
+// ==========================================
+// 2. ADD NEW PATIENT
+// ==========================================
 exports.addPatient = async (req, res) => {
     try {
-        const { patientId } = req.body;
+        let data = req.body;
         
-        // Check duplicate ID
-        const exists = await Patient.findOne({ patientId });
-        if (exists) {
-            return res.status(400).json({ message: "Patient ID already exists" });
+        // Ensure patientId exists
+        if (!data.patientId) {
+            data.patientId = `PT${Date.now().toString().slice(-4)}`;
         }
 
-        const patient = new Patient(req.body);
-        const createdPatient = await patient.save();
-        res.status(201).json(createdPatient);
+        // Check if patientId already exists
+        const existing = await Patient.findOne({ patientId: data.patientId });
+        if (existing) {
+            return res.status(400).json({ message: "Patient ID already exists. Please try again." });
+        }
+
+        // Sanitization & Default Values
+        const newPatient = new Patient({
+            patientId: data.patientId,
+            name: data.name || "Unknown",
+            type: data.type || "human",
+            ownerName: data.ownerName || "",
+            breed: data.breed || "",
+            age: data.age || "",
+            gender: data.gender || "",
+            phone: data.phone || "N/A",
+            address: data.address || "N/A",
+            lastVisit: data.lastVisit || "",
+            paid: Number(data.paid) || 0, // Convert string to Number securely
+            medicalHistory: data.medicalHistory || "",
+            status: data.status || "active",
+            img: data.img || "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
+        });
+
+        const savedPatient = await newPatient.save();
+        res.status(201).json(savedPatient);
+
     } catch (error) {
-        res.status(400).json({ message: error.message });
+        console.error("❌ Add Patient Error:", error.message);
+        res.status(400).json({ message: "Failed to add patient", error: error.message });
     }
 };
 
-// @desc    Update Patient Details
-// @route   PUT /api/admin/patients/:id
+// ==========================================
+// 3. UPDATE PATIENT
+// ==========================================
 exports.updatePatient = async (req, res) => {
     try {
-        const patient = await Patient.findById(req.params.id);
+        let updateData = { ...req.body };
 
-        if (patient) {
-            // Update fields
-            patient.name = req.body.name || patient.name;
-            patient.phone = req.body.phone || patient.phone;
-            patient.address = req.body.address || patient.address;
-            patient.age = req.body.age || patient.age;
-            patient.paid = req.body.paid || patient.paid;
-            patient.lastVisit = req.body.lastVisit || patient.lastVisit;
-            patient.img = req.body.img || patient.img;
-            
-            // Conditional Updates
-            if(req.body.type) patient.type = req.body.type;
-            if(req.body.ownerName) patient.ownerName = req.body.ownerName;
-            if(req.body.breed) patient.breed = req.body.breed;
-            if(req.body.gender) patient.gender = req.body.gender;
-
-            const updatedPatient = await patient.save();
-            res.json(updatedPatient);
-        } else {
-            res.status(404).json({ message: "Patient not found" });
+        // Ensure 'paid' is a valid number before updating
+        if (updateData.paid !== undefined) {
+            updateData.paid = Number(updateData.paid) || 0;
         }
+
+        const patient = await Patient.findByIdAndUpdate(
+            req.params.id,
+            updateData,
+            { new: true, runValidators: true }
+        );
+
+        if (!patient) {
+            return res.status(404).json({ message: "Patient not found" });
+        }
+
+        res.status(200).json(patient);
     } catch (error) {
-        res.status(400).json({ message: error.message });
+        console.error("❌ Update Patient Error:", error.message);
+        res.status(400).json({ message: "Update failed", error: error.message });
     }
 };
 
-// @desc    Delete Patient Record
-// @route   DELETE /api/admin/patients/:id
+// ==========================================
+// 4. DELETE PATIENT
+// ==========================================
 exports.deletePatient = async (req, res) => {
     try {
-        const patient = await Patient.findById(req.params.id);
+        const id = req.params.id;
 
-        if (patient) {
-            await patient.deleteOne();
-            res.json({ message: "Patient removed" });
-        } else {
-            res.status(404).json({ message: "Patient not found" });
+        // Valid MongoDB ID format check to prevent server crash
+        if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+            return res.status(400).json({ message: "Invalid Patient ID format" });
         }
+
+        const deletedPatient = await Patient.findByIdAndDelete(id);
+
+        if (!deletedPatient) {
+            return res.status(404).json({ message: "Patient not found" });
+        }
+
+        res.status(200).json({ message: "Patient deleted successfully" });
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error("❌ Delete Patient Error:", error.message);
+        res.status(500).json({ message: "Server Error during deletion" });
     }
 };
-
 // --- SPECIALIST TRACKER HANDLERS ---
 // @desc    Get All Doctors for Tracker
 // @route   GET /api/admin/specialists
