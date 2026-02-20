@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const doctorSchema = mongoose.Schema({
     // --- Basic Info ---
     name: { type: String, required: true },
+    email: { type: String },
     speciality: { type: String, required: true }, // Mapped to 'dept' in frontend
     fee: { type: Number, required: true },
     exp: { type: String },
@@ -24,7 +25,7 @@ const doctorSchema = mongoose.Schema({
     status: { 
         type: String, 
         // Added 'off duty' to match your frontend toggle logic
-        enum: ['available', 'busy', 'break', 'off duty' ,'active'], 
+      enum: ['active', 'inactive', 'on-leave', 'available', 'busy', 'break'], 
         default: 'available' 
     },
     // Used as 'nextSlot' in frontend
@@ -36,8 +37,21 @@ const doctorSchema = mongoose.Schema({
     // Stats for Dashboard
     earned: { type: Number, default: 0 },
     rating: { type: Number, default: 4.5 }, // 0 to 5
-    isVerified: { type: Boolean, default: true }
+    isVerified: { type: Boolean, default: true },
+    licenseId: { 
+        type: String, 
+        default: () => `LIC-${Date.now()}${Math.floor(Math.random() * 1000)}` 
+    },
+    qualification: { type: String, default: "General" },
+    experience: { type: Number, default: 0 },
+    bio: { type: String, default: "" }
 
-}, { timestamps: true });
+}, 
+
+
+{ timestamps: true });
+
+doctorSchema.index({ createdAt: -1 });
+
 
 module.exports = mongoose.model('Doctor', doctorSchema);

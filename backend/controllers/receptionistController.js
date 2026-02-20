@@ -176,28 +176,27 @@ exports.getDoctorsList = async (req, res) => {
 // 5. GET LIVE QUEUE STATUS
 exports.getLiveQueue = async (req, res) => {
     try {
-        // 1. Find who is currently inside with the doctor
-        const currentPatient = await Appointment.findOne({ 
-            status: 'With Doctor',
-            date: new Date().toISOString().split('T')[0] // Only today
-        }).select('patientName token doctorName time type');
+        const today = new Date().toISOString().split('T')[0];
 
-        // 2. Find who is waiting (Sorted: Emergency first, then by Time)
-        const waitingQueue = await Appointment.find({
-            status: { $in: ['Checked-in', 'Waiting'] },
-            date: new Date().toISOString().split('T')[0]
-        }).sort({ type: 1, time: 1 }); // 'Emergency' comes before 'Walk-in' alphabetically, or use custom sort logic if needed
-
-        res.status(200).json({
-            current: currentPatient,
-            queue: waitingQueue
+        // Sirf un patients ko laao jo aaj ke hain aur Waiting/Checked In hain
+        const queue = await Appointment.find({
+            date: today,
+            status: { $in: ['Waiting', 'Checked In', 'Checked-in'] }
         });
 
-    } catch (err) {
-        res.status(500).json({ message: "Queue data fetch failed" });
+        // Emergency walo ko upar rakhne ki sorting
+        queue.sort((a, b) => {
+            if (a.priority === 'Emergency' && b.priority !== 'Emergency') return -1;
+            if (a.priority !== 'Emergency' && b.priority === 'Emergency') return 1;
+            return (a.checkInTime || 0) - (b.checkInTime || 0);
+        });
+
+        res.status(200).json(queue);
+    } catch (error) {
+        console.error("Queue Fetch Error:", error);
+        res.status(500).json({ message: "Failed to fetch live queue." });
     }
 };
-
 // --- 1. GET DOCTORS LIST (For Dropdown) ---
 exports.getDoctorsList = async (req, res) => {
     try {

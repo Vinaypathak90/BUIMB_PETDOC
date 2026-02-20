@@ -4,96 +4,138 @@ const Appointment = require('../models/Appointment');
 const Transaction = require('../models/Transaction');
 const Settings = require('../models/Settings');
 
-// @desc    Get all doctors
-// @route   GET /api/admin/doctors
+// ==========================================
+// 1. GET ALL DOCTORS
+// ==========================================
 exports.getDoctors = async (req, res) => {
     try {
         const doctors = await Doctor.find().sort({ createdAt: -1 });
-        res.json(doctors);
+        res.status(200).json(doctors);
     } catch (error) {
-        res.status(500).json({ message: error.message });
+        console.error("Fetch Doctors Error:", error);
+        res.status(500).json({ message: "Error fetching doctors", error: error.message });
     }
 };
-
-// @desc    Add new doctor
-// @route   POST /api/admin/doctors
+// ==========================================
+// ADD NEW DOCTOR (POST)
+// ==========================================
 exports.addDoctor = async (req, res) => {
     try {
         console.log("📥 Incoming Doctor Data:", req.body);
 
-        // Extracting fields from frontend request
-        const { name, type, speciality, qualification, experience, fee, status, img, room } = req.body;
+        let data = req.body;
 
-        // Basic Validation
-        if (!name || !speciality) {
-            return res.status(400).json({ message: "Name and Speciality are required." });
+        if (!data.name || !data.speciality) {
+            return res.status(400).json({ message: "Name and Speciality are strictly required." });
         }
 
+        // 🚨 THE MASTER STROKE 🚨
+        // React form ka kachra (purani IDs) ignore karo! Naya doctor matlab 100% nayi ID.
+        // Hum data.licenseId aur data.email ko check hi nahi karenge ab!
+        const forceNewLicense = `LIC-${Math.floor(10000 + Math.random() * 90000)}`;
+        const forceNewEmail = `dr_${Date.now()}_${Math.floor(Math.random() * 1000)}@clinic.com`;
+
         const newDoctor = new Doctor({
-            name,
-            type: type ? type.toLowerCase() : 'human', // Convert to lowercase for DB enum
-            speciality,
-            qualification: qualification || "MBBS",
-            experience: experience || "0",
-            fee: Number(fee) || 0,
-            status: status ? status.toLowerCase() : 'available',
-            img: img || "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
-            room: room || "General"
+            name: String(data.name).trim(),
+            email: forceNewEmail,             // <-- Frontend ki email ignore kardi
+            licenseId: forceNewLicense,       // <-- Frontend ki licenseId ignore kardi
+            
+            type: data.type ? String(data.type).toLowerCase() : 'human',
+            speciality: String(data.speciality).trim(),
+            qualification: data.qualification || "General",
+            experience: data.experience ? Number(data.experience) : 0, 
+            fee: data.fee ? Number(data.fee) : 0, 
+            status: data.status ? String(data.status).toLowerCase() : 'available',
+            img: data.img || "https://cdn-icons-png.flaticon.com/512/3135/3135715.png",
+            bio: data.bio || "",
+            room: data.room || "Room 101" 
         });
 
         const savedDoctor = await newDoctor.save();
-        console.log("✅ Doctor Added Successfully:", savedDoctor._id);
+        console.log("✅ Doctor Added Successfully with FORCE License:", forceNewLicense);
         res.status(201).json(savedDoctor);
 
     } catch (error) {
         console.error("❌ Add Doctor Error:", error);
-        // If it's a validation error, send the exact missing field
-        if (error.name === 'ValidationError') {
-             const messages = Object.values(error.errors).map(val => val.message);
-             return res.status(400).json({ message: messages.join(', ') });
+        
+        if (error.code === 11000) {
+            const duplicatedKey = Object.keys(error.keyValue)[0]; 
+            const duplicatedValue = error.keyValue[duplicatedKey];
+            return res.status(400).json({ 
+                message: `Duplicate Error: A doctor with ${duplicatedKey} = "${duplicatedValue}" already exists! Please change it.` 
+            });
         }
-        res.status(400).json({ message: "Validation Failed", error: error.message });
-    }
-};
 
-// @desc    Update doctor details
-// @route   PUT /api/admin/doctors/:id
+        res.status(400).json({ message: "Failed to add doctor", error: error.message });
+    }
+};// ==========================================
+// ==========================================
+// UPDATE DOCTOR (PUT)
+// ==========================================
 exports.updateDoctor = async (req, res) => {
     try {
         console.log(`📥 Updating Doctor ${req.params.id}:`, req.body);
         
-        // Ensure type and status are formatted correctly before updating
-        if (req.body.type) req.body.type = req.body.type.toLowerCase();
-        if (req.body.status) req.body.status = req.body.status.toLowerCase();
+        let updateData = { ...req.body };
 
+        // 🚨 THE NUCLEAR FIX 🚨
+        // Update karte waqt in unique fields ko update karna hi nahi hai!
+        // Isse frontend agar galat ID bhi bhejega, toh backend usko kachre ke dabbe mein daal dega.
+        delete updateData.licenseId;
+        delete updateData.email;
+
+        // 🛠️ SANITIZATION FOR UPDATE:
+        if (updateData.type) updateData.type = String(updateData.type).toLowerCase();
+        if (updateData.status) updateData.status = String(updateData.status).toLowerCase();
+        if (updateData.qualification === "") updateData.qualification = "General";
+
+        // Number fields ko safely parse karo
+        if (updateData.fee === "" || updateData.fee == null) updateData.fee = 0;
+        else if (updateData.fee !== undefined) updateData.fee = Number(updateData.fee);
+
+        if (updateData.experience === "" || updateData.experience == null) updateData.experience = 0;
+        else if (updateData.experience !== undefined) updateData.experience = Number(updateData.experience);
+
+        // Update the doctor in MongoDB
         const doctor = await Doctor.findByIdAndUpdate(
             req.params.id, 
-            req.body, 
-            { new: true, runValidators: true } // runValidators ensures updated data respects Schema rules
+            updateData, 
+            { new: true, runValidators: true } 
         );
 
         if (!doctor) {
             return res.status(404).json({ message: 'Doctor not found' });
         }
         
-        console.log("✅ Doctor Updated Successfully");
+        console.log("✅ Doctor Updated Successfully (Ignored License/Email changes)");
         res.status(200).json(doctor);
+        
     } catch (error) {
         console.error("❌ Update Doctor Error:", error);
+        
+        // Agar fir bhi koi raita failta hai:
+        if (error.code === 11000) {
+            const duplicatedKey = Object.keys(error.keyValue)[0]; 
+            const duplicatedValue = error.keyValue[duplicatedKey];
+            return res.status(400).json({ 
+                message: `Update Failed: A doctor with ${duplicatedKey} = "${duplicatedValue}" already exists!` 
+            });
+        }
+
         res.status(400).json({ message: error.message });
     }
 };
-
-// @desc    Delete doctor
-// @route   DELETE /api/admin/doctors/:id
+// ==========================================
+// 4. DELETE DOCTOR (DELETE)
+// ==========================================
 exports.deleteDoctor = async (req, res) => {
     try {
-        const doctor = await Doctor.findById(req.params.id);
+        const doctor = await Doctor.findByIdAndDelete(req.params.id);
         if (!doctor) return res.status(404).json({ message: 'Doctor not found' });
         
-        await doctor.deleteOne();
-        res.json({ message: 'Doctor removed' });
+        res.status(200).json({ message: 'Doctor removed from system' });
     } catch (error) {
+        console.error("❌ Delete Doctor Error:", error);
         res.status(500).json({ message: error.message });
     }
 };
@@ -279,62 +321,78 @@ exports.deleteSpecialist = async (req, res) => {
         res.status(500).json({ message: error.message });
     }
 };
-// @desc    Get All Appointments for Admin
-// @route   GET /api/admin/appointments
+// ==========================================
+// 🚀 GET ALL APPOINTMENTS (Safe & Optimized)
+// ==========================================
 exports.getAppointments = async (req, res) => {
     try {
-        // Kyunki 'doctorImg' ab Appointment table mein hi hai, 
-        // humein .populate() karne ki zaroorat nahi hai (Fast Performance)
-        const appointments = await Appointment.find().sort({ createdAt: -1 });
-        
-        res.json(appointments);
-    } catch (error) {
-        res.status(500).json({ message: "Error fetching appointments" });
-    }
-};
+        console.log("--- 🕵️ Admin Fetching All Appointments ---");
 
-// @desc    Toggle Status
-// @route   PUT /api/admin/appointments/:id/toggle
-exports.toggleAppointmentStatus = async (req, res) => {
-    try {
-        const appointment = await Appointment.findById(req.params.id);
-        if (!appointment) return res.status(404).json({ message: "Not Found" });
+        // allowDiskUse(true) memory error ko solve karta hai
+        const appointments = await Appointment.find()
+            .sort({ createdAt: -1 })
+            .allowDiskUse(true); 
 
-        appointment.status = appointment.status === 'Scheduled' ? 'Cancelled' : 'Scheduled';
-        await appointment.save();
+        console.log(`✅ Database se ${appointments.length} records mile.`);
 
-        res.json({ message: "Status Updated", status: appointment.status });
-    } catch (error) {
-        res.status(500).json({ message: "Update failed" });
-    }
-};
-exports.deleteAppointment = async (req, res) => {
-    try {
-        const id = req.params.id;
-        console.log("🗑️ Attempting to delete Appointment ID:", id);
+        // Frontend mapping (Transforming for your Table)
+        const formattedData = appointments.map(app => ({
+            _id: app._id,
+            doctorName: app.doctorName || "Unknown Doctor",
+            speciality: app.speciality || "General",
+            patientName: app.patientName || "Guest Patient",
+            date: app.date || "--",
+            time: app.time || "--",
+            status: app.status, // Frontend boolean logic handles this
+            fee: app.fee || 0,
+            doctorImg: app.doctorImg || "https://cdn-icons-png.flaticon.com/512/3774/3774299.png",
+            patImg: app.patImg || "https://cdn-icons-png.flaticon.com/512/1144/1144760.png"
+        }));
 
-        // Check if ID is valid (prevents server crash on bad IDs)
-        if (!id.match(/^[0-9a-fA-F]{24}$/)) {
-            console.log("❌ Invalid ID format");
-            return res.status(400).json({ message: "Invalid ID format" });
-        }
-
-        // Find and Delete in one step
-        const deletedAppointment = await Appointment.findByIdAndDelete(id);
-
-        if (!deletedAppointment) {
-            console.log("⚠️ Appointment not found in Database");
-            return res.status(404).json({ message: "Appointment not found" });
-        }
-
-        console.log("✅ Appointment Deleted Successfully");
-        res.json({ message: "Appointment removed" });
+        res.status(200).json(formattedData);
 
     } catch (error) {
-        console.error("🔥 Delete Error:", error);
+        console.error("❌ CRITICAL ERROR IN ADMIN GET_APPOINTMENTS:", error.message);
         res.status(500).json({ message: "Server Error", error: error.message });
     }
 };
+
+// ==========================================
+// 🔄 TOGGLE APPOINTMENT STATUS
+// ==========================================
+exports.toggleAppointmentStatus = async (req, res) => {
+    try {
+        const appointment = await Appointment.findById(req.params.id);
+        
+        if (!appointment) {
+            return res.status(404).json({ message: "Appointment not found" });
+        }
+
+        // Status Toggle Logic
+        appointment.status = appointment.status === 'Scheduled' ? 'Cancelled' : 'Scheduled';
+        await appointment.save();
+
+        console.log(`✅ Status Toggled for ${appointment.patientName}: ${appointment.status}`);
+        res.status(200).json({ message: "Status Updated", status: appointment.status });
+
+    } catch (error) {
+        console.error("❌ Toggle Status Error:", error.message);
+        res.status(500).json({ message: "Update Failed" });
+    }
+};
+
+// ==========================================
+// 🗑️ DELETE APPOINTMENT
+// ==========================================
+exports.deleteAppointment = async (req, res) => {
+    try {
+        await Appointment.findByIdAndDelete(req.params.id);
+        res.status(200).json({ message: "Appointment deleted" });
+    } catch (error) {
+        res.status(500).json({ message: "Delete failed" });
+    }
+};
+
 
 // ==========================================
 // TRANSACTION CONTROLLERS

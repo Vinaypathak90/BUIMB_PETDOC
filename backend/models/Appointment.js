@@ -53,5 +53,5 @@ const appointmentSchema = mongoose.Schema({
     paymentStatus: { type: String, enum: ['Pending', 'Paid'], default: 'Paid' }
 }, { timestamps: true });
 
-
+appointmentSchema.index({ createdAt: -1 });
 module.exports = mongoose.model('Appointment', appointmentSchema);

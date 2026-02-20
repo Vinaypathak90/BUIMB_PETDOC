@@ -71,37 +71,46 @@ const Doctors = () => {
   };
 
   // --- 3. SAVE / UPDATE DOCTOR ---
-  const handleSave = async (e) => {
+const handleSave = async (e) => {
     e.preventDefault();
     const storedData = JSON.parse(localStorage.getItem('user_token'));
-    
-    const isEdit = !!currentDoctor._id;
+
+    // 🚨 YAHAN FIX HAI: Pata lagao ki ye naya doctor hai ya edit ho raha hai
+    // Agar currentDoctor mein pehle se _id majood hai, matlab edit ho raha hai
+    const doctorId = currentDoctor._id || currentDoctor.id; 
+    const isEdit = Boolean(doctorId);
+
+    // Agar Edit hai toh PUT method aur uski ID wali URL use hogi, warna POST.
     const url = isEdit 
-      ? `http://localhost:5000/api/admin/doctors/${currentDoctor._id}`
-      : 'http://localhost:5000/api/admin/doctors';
-    
+        ? `http://localhost:5000/api/admin/doctors/${doctorId}` 
+        : 'http://localhost:5000/api/admin/doctors';
+        
+    const fetchMethod = isEdit ? 'PUT' : 'POST';
+
     try {
-      const res = await fetch(url, {
-        method: isEdit ? 'PUT' : 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${storedData.token}` 
-        },
-        body: JSON.stringify(currentDoctor)
-      });
+        const res = await fetch(url, {
+            method: fetchMethod, // Naya hai toh POST, Edit hai toh PUT
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${storedData.token}` 
+            },
+            body: JSON.stringify(currentDoctor)
+        });
 
-      if (res.ok) {
-        setIsModalOpen(false);
-        fetchDoctors();
-      } else {
-        const errorData = await res.json();
-        alert(errorData.message || "Save failed");
-      }
+        const data = await res.json();
+
+        if (res.ok) {
+            alert(isEdit ? "Doctor updated successfully!" : "Doctor added successfully!");
+            setIsModalOpen(false);
+            fetchDoctors(); // Table ko refresh karne ka function
+        } else {
+            alert(`Error: ${data.message}`);
+        }
     } catch (err) {
-      alert("Error connecting to server");
+        console.error("Save operation failed:", err);
+        alert("Server connection failed!");
     }
-  };
-
+};
   // --- PAGINATION LOGIC ---
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
