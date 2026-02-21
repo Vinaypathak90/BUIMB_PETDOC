@@ -176,24 +176,41 @@ exports.getDoctorsList = async (req, res) => {
 // 5. GET LIVE QUEUE STATUS
 exports.getLiveQueue = async (req, res) => {
     try {
-        const today = new Date().toISOString().split('T')[0];
+        // Aaj ki date ke hisaab se format adjust kar lena agar zaroorat pade
+        const todayLocal = new Date().toLocaleDateString('en-GB'); 
 
-        // Sirf un patients ko laao jo aaj ke hain aur Waiting/Checked In hain
-        const queue = await Appointment.find({
-            date: today,
-            status: { $in: ['Waiting', 'Checked In', 'Checked-in'] }
+        // 1. Queue wale patients dhoondo (Waiting, Scheduled)
+        const queueList = await Appointment.find({
+            // date: todayLocal, // Agar date filter se issue aaye toh ek minute ke liye isko comment kar dena
+            status: { $in: ['Waiting', 'Checked In', 'Checked-in', 'Scheduled', 'Pending'] }
         });
 
         // Emergency walo ko upar rakhne ki sorting
-        queue.sort((a, b) => {
+        queueList.sort((a, b) => {
             if (a.priority === 'Emergency' && b.priority !== 'Emergency') return -1;
             if (a.priority !== 'Emergency' && b.priority === 'Emergency') return 1;
-            return (a.checkInTime || 0) - (b.checkInTime || 0);
+            
+            // Time ke hisaab se sort karo
+            const timeA = a.time || "00:00";
+            const timeB = b.time || "00:00";
+            return timeA.localeCompare(timeB);
         });
 
-        res.status(200).json(queue);
+        // 2. Jo patient abhi Doctor ke paas hai usko dhoondo
+        const currentPatientList = await Appointment.find({
+            status: 'With Doctor'
+        }).sort({ updatedAt: -1 }).limit(1); // Jo sabse latest gaya hai
+
+        const currentPatient = currentPatientList.length > 0 ? currentPatientList[0] : null;
+
+        // 🚨 MAIN FIX: Frontend ko exactly wahi Data Structure bhejo jo wo expect kar raha hai
+        res.status(200).json({
+            current: currentPatient,
+            queue: queueList
+        });
+
     } catch (error) {
-        console.error("Queue Fetch Error:", error);
+        console.error("❌ Queue Fetch Error:", error);
         res.status(500).json({ message: "Failed to fetch live queue." });
     }
 };
