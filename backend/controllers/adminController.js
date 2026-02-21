@@ -3,7 +3,8 @@ const Patient = require('../models/Patient');
 const Appointment = require('../models/Appointment');
 const Transaction = require('../models/Transaction');
 const Settings = require('../models/Settings');
-
+const User = require('../models/User');
+const bcrypt = require('bcryptjs');
 // ==========================================
 // 1. GET ALL DOCTORS
 // ==========================================
@@ -29,16 +30,51 @@ exports.addDoctor = async (req, res) => {
             return res.status(400).json({ message: "Name and Speciality are strictly required." });
         }
 
-        // 🚨 THE MASTER STROKE 🚨
-        // React form ka kachra (purani IDs) ignore karo! Naya doctor matlab 100% nayi ID.
-        // Hum data.licenseId aur data.email ko check hi nahi karenge ab!
-        const forceNewLicense = `LIC-${Math.floor(10000 + Math.random() * 90000)}`;
-        const forceNewEmail = `dr_${Date.now()}_${Math.floor(Math.random() * 1000)}@clinic.com`;
+        const rawName = String(data.name).trim();
 
+        // 🧠 SMART LOGIC: Naam se Email aur Password banana
+        // 1. Email: saare spaces hata kar small letters (e.g., "Vinay Sharma" -> "vinaysharma")
+        const cleanNameForEmail = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        
+        // 2. Password: First name nikal kar pehla letter Capital (e.g., "Vinay")
+        const firstName = rawName.split(' ')[0];
+        const capFirstName = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+
+        // Base Email, Password aur License set karo
+        let forceNewEmail = `${cleanNameForEmail}@1234.com`;
+        const plainPassword = `${capFirstName}@1234`; // Example: Vinay@1234
+        const forceNewLicense = `LIC-${Math.floor(10000 + Math.random() * 90000)}`;
+
+        // 🚨 CHECK: Agar is exact email se koi pehle se hai, toh email mein random number jod do
+        const existingUser = await User.findOne({ email: forceNewEmail });
+        if (existingUser) {
+            forceNewEmail = `${cleanNameForEmail}${Math.floor(Math.random() * 1000)}@1234.com`;
+        }
+
+        // 🔐 Password Hash (Secure) karo
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(plainPassword, salt);
+
+        // ==========================================
+        // 1. USER ACCOUNT BANAO (Login ke liye)
+        // ==========================================
+        const newLoginAccount = new User({
+            name: rawName,
+            email: forceNewEmail,
+            password: hashedPassword,
+            role: 'doctor' // <-- Role 'doctor' set hoga
+        });
+        await newLoginAccount.save();
+        console.log(`✅ Doctor Login Created -> Email: ${forceNewEmail} | Pass: ${plainPassword}`);
+
+        // ==========================================
+        // 2. DOCTOR PROFILE BANAO (Display ke liye)
+        // ==========================================
         const newDoctor = new Doctor({
-            name: String(data.name).trim(),
-            email: forceNewEmail,             // <-- Frontend ki email ignore kardi
-            licenseId: forceNewLicense,       // <-- Frontend ki licenseId ignore kardi
+            name: rawName,
+            email: forceNewEmail,             
+            licenseId: forceNewLicense,       
+            userId: newLoginAccount._id, // <-- User account ko Doctor profile se link kar diya
             
             type: data.type ? String(data.type).toLowerCase() : 'human',
             speciality: String(data.speciality).trim(),
@@ -52,8 +88,16 @@ exports.addDoctor = async (req, res) => {
         });
 
         const savedDoctor = await newDoctor.save();
-        console.log("✅ Doctor Added Successfully with FORCE License:", forceNewLicense);
-        res.status(201).json(savedDoctor);
+        console.log("✅ Doctor Profile Added Successfully with FORCE License:", forceNewLicense);
+        
+        // Frontend ko response mein details bhejo taaki UI mein dikha sake
+        res.status(201).json({
+            ...savedDoctor._doc,
+            loginDetails: {
+                email: forceNewEmail,
+                password: plainPassword
+            }
+        });
 
     } catch (error) {
         console.error("❌ Add Doctor Error:", error);
@@ -68,7 +112,8 @@ exports.addDoctor = async (req, res) => {
 
         res.status(400).json({ message: "Failed to add doctor", error: error.message });
     }
-};// ==========================================
+};
+// ==========================================
 // ==========================================
 // UPDATE DOCTOR (PUT)
 // ==========================================
