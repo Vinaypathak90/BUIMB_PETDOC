@@ -24,28 +24,43 @@ const DoctorInvoices = () => {
     status: 'Pending'
   });
 
-  // --- MOCK DATA ---
-  const mockInvoices = [
-    { 
-      id: "INV-001", patient: "Charlene Reed", date: "14 Feb 2026", amount: 550, status: "Paid", 
-      items: [{ desc: "General Checkup", cost: 500, qty: 1 }], tax: 50, img: "https://randomuser.me/api/portraits/women/44.jpg"
-    },
-    { 
-      id: "INV-002", patient: "Travis Trimble", date: "12 Feb 2026", amount: 1200, status: "Pending", 
-      items: [{ desc: "Root Canal", cost: 1000, qty: 1 }, { desc: "Medicine Kit", cost: 200, qty: 1 }], tax: 0, img: "https://randomuser.me/api/portraits/men/32.jpg"
-    },
-    { 
-      id: "INV-003", patient: "Carl Kelly", date: "10 Feb 2026", amount: 300, status: "Cancelled", 
-      items: [{ desc: "Video Consult", cost: 300, qty: 1 }], tax: 0, img: "https://randomuser.me/api/portraits/men/85.jpg"
-    },
-    { 
-      id: "INV-004", patient: "Michelle Fairfax", date: "08 Feb 2026", amount: 4500, status: "Paid", 
-      items: [{ desc: "Dental Surgery", cost: 4000, qty: 1 }, { desc: "X-Ray", cost: 500, qty: 1 }], tax: 0, img: "https://randomuser.me/api/portraits/women/65.jpg"
-    }
-  ];
+  // 🧠 SMART TOKEN HELPER
+  const getToken = () => {
+    let token = "";
+    try {
+        const uToken = JSON.parse(localStorage.getItem('user_token'));
+        const uInfo = JSON.parse(localStorage.getItem('userInfo'));
+        const uRaw = localStorage.getItem('token');
+        if (uToken?.token) token = uToken.token;
+        else if (uInfo?.token) token = uInfo.token;
+        else if (uRaw && !uRaw.startsWith('{')) token = uRaw;
+    } catch (e) {}
+    return token;
+  };
 
+  // --- 1. FETCH INVOICES FROM BACKEND ---
   useEffect(() => {
-    setInvoices(mockInvoices);
+    const fetchInvoices = async () => {
+      try {
+        const token = getToken();
+        if (!token) return;
+
+        const res = await fetch('http://localhost:5000/api/doctor/invoices', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+          setInvoices(data);
+        } else {
+          console.error("Failed to fetch invoices:", data.message);
+        }
+      } catch (error) {
+        console.error("Fetch Invoices Error:", error);
+      }
+    };
+
+    fetchInvoices();
   }, []);
 
   // --- CALCULATIONS ---
@@ -74,26 +89,59 @@ const DoctorInvoices = () => {
     return subtotal + (subtotal * (newInvoice.tax / 100));
   };
 
-  const handleSaveInvoice = () => {
-    const newInv = {
-        id: `INV-${Math.floor(Math.random() * 1000)}`,
-        patient: newInvoice.patientName || "Unknown Patient",
-        date: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-        amount: calculateTotal(),
-        status: newInvoice.status,
+  // --- 2. SAVE INVOICE TO BACKEND ---
+  const handleSaveInvoice = async () => {
+    if (!newInvoice.patientName.trim()) {
+        alert("Please enter a patient name.");
+        return;
+    }
+
+    const payload = {
+        patientName: newInvoice.patientName,
         items: newInvoice.items,
-        tax: calculateTotal() - newInvoice.items.reduce((acc, item) => acc + (Number(item.cost) * Number(item.qty)), 0),
-        img: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
+        status: newInvoice.status,
+        totalAmount: calculateTotal(),
+        method: "Cash" // Default, can be dynamic later
     };
-    setInvoices([newInv, ...invoices]);
-    setShowCreateModal(false);
-    // Reset form logic here
+
+    try {
+        const token = getToken();
+        const res = await fetch('http://localhost:5000/api/doctor/invoices', {
+            method: 'POST',
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+            // Add new invoice to state instantly
+            setInvoices([data.invoice, ...invoices]);
+            setShowCreateModal(false);
+            
+            // Reset form
+            setNewInvoice({
+                patientName: '',
+                items: [{ desc: 'Consultation Fee', cost: 500, qty: 1 }],
+                tax: 10,
+                status: 'Pending'
+            });
+            alert("Invoice generated successfully!");
+        } else {
+            alert(`Failed: ${data.message}`);
+        }
+    } catch (error) {
+        console.error("Create Invoice Error:", error);
+    }
   };
 
   // Filter
   const filteredInvoices = invoices.filter(inv => {
-      const matchStatus = activeTab === 'all' ? true : inv.status.toLowerCase() === activeTab;
-      const matchSearch = inv.patient.toLowerCase().includes(searchTerm.toLowerCase()) || inv.id.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchStatus = activeTab === 'all' ? true : inv.status?.toLowerCase() === activeTab;
+      const matchSearch = inv.patient?.toLowerCase().includes(searchTerm.toLowerCase()) || inv.id?.toLowerCase().includes(searchTerm.toLowerCase());
       return matchStatus && matchSearch;
   });
 
@@ -193,7 +241,7 @@ const DoctorInvoices = () => {
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                          {filteredInvoices.map((inv) => (
+                          {filteredInvoices.length > 0 ? filteredInvoices.map((inv) => (
                               <tr key={inv.id} className="hover:bg-slate-50/50 transition-colors group">
                                   <td className="px-6 py-4 font-bold text-[#00d0f1]">{inv.id}</td>
                                   <td className="px-6 py-4">
@@ -224,7 +272,13 @@ const DoctorInvoices = () => {
                                       </div>
                                   </td>
                               </tr>
-                          ))}
+                          )) : (
+                              <tr>
+                                  <td colSpan="6" className="text-center py-10 text-slate-400 font-medium">
+                                      No invoices found.
+                                  </td>
+                              </tr>
+                          )}
                       </tbody>
                   </table>
               </div>
@@ -246,11 +300,14 @@ const DoctorInvoices = () => {
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Patient Name</label>
-                            <input type="text" value={newInvoice.patientName} onChange={(e) => setNewInvoice({...newInvoice, patientName: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-[#00d0f1]" placeholder="Search patient..." />
+                            <input type="text" value={newInvoice.patientName} onChange={(e) => setNewInvoice({...newInvoice, patientName: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-[#00d0f1]" placeholder="Enter patient name..." />
                         </div>
                         <div>
-                            <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Invoice Date</label>
-                            <input type="date" className="w-full p-3 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-[#00d0f1]" />
+                            <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Status</label>
+                            <select value={newInvoice.status} onChange={(e) => setNewInvoice({...newInvoice, status: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-sm outline-none focus:border-[#00d0f1] bg-white">
+                                <option value="Pending">Pending</option>
+                                <option value="Paid">Paid</option>
+                            </select>
                         </div>
                     </div>
 
@@ -321,7 +378,7 @@ const DoctorInvoices = () => {
                             <tr><th className="p-2">Item</th><th className="p-2 text-right">Qty</th><th className="p-2 text-right">Cost</th></tr>
                         </thead>
                         <tbody className="text-sm">
-                            {viewInvoice.items.map((item, i) => (
+                            {viewInvoice.items?.map((item, i) => (
                                 <tr key={i} className="border-b border-slate-50">
                                     <td className="p-2 font-bold text-slate-700">{item.desc}</td>
                                     <td className="p-2 text-right text-slate-500">{item.qty}</td>
@@ -334,11 +391,11 @@ const DoctorInvoices = () => {
                     <div className="flex justify-between items-end pt-4 border-t border-slate-200">
                         <div>
                             <p className="text-xs font-bold text-slate-400 uppercase">Status</p>
-                            <span className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-bold ${viewInvoice.status==='Paid'?'bg-emerald-100 text-emerald-700':'bg-orange-100 text-orange-700'}`}>{viewInvoice.status}</span>
+                            <span className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-bold ${viewInvoice.status==='Paid'?'bg-emerald-100 text-emerald-700': viewInvoice.status==='Pending'?'bg-orange-100 text-orange-700':'bg-red-100 text-red-700'}`}>{viewInvoice.status}</span>
                         </div>
                         <div className="text-right">
                             <p className="text-xs font-bold text-slate-400 uppercase">Grand Total</p>
-                            <p className="text-2xl font-black text-[#192a56]">₹{viewInvoice.amount.toLocaleString()}</p>
+                            <p className="text-2xl font-black text-[#192a56]">₹{viewInvoice.amount?.toLocaleString()}</p>
                         </div>
                     </div>
 

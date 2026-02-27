@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const doctorSchema = mongoose.Schema({
     // --- Basic Info ---
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     name: { type: String, required: true },
     email: { type: String },
     speciality: { type: String, required: true }, // Mapped to 'dept' in frontend
@@ -44,7 +45,17 @@ const doctorSchema = mongoose.Schema({
     },
     qualification: { type: String, default: "General" },
     experience: { type: Number, default: 0 },
-    bio: { type: String, default: "" }
+    bio: { type: String, default: "" },
+    specialties: [{
+        id: { type: String }, // Frontend ID maintain karne ke liye
+        name: { type: String },
+        services: [{
+            id: { type: String },
+            name: { type: String },
+            price: { type: Number, default: 0 },
+            description: { type: String }
+        }]
+    }]
 
 }, 
 

@@ -1,6 +1,5 @@
 require('dotenv').config();
 const express = require('express');
-const dotenv = require('dotenv');
 const cors = require('cors');
 const connectDB = require('./config/db');
 
@@ -8,13 +7,14 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes'); 
-const aiRoutes = require('./routes/aiRoutes'); //
+const aiRoutes = require('./routes/aiRoutes'); 
 const transactionRoutes = require('./routes/transactionRoutes');
-
 const adminRoutes = require('./routes/adminRoutes');
+const receptionistRoutes = require('./routes/receptionistRoutes'); 
 
-const patientRoutes = require('./routes/receptionistRoutes'); // Receptionist routes (includes patient management)
-dotenv.config();
+// 🚨 YAHAN DOCTOR ROUTES IMPORT KIYE HAIN 🚨
+const doctorRoutes = require('./routes/doctorRoutes'); 
+
 connectDB(); // Connect to MongoDB
 
 const app = express();
@@ -30,14 +30,17 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/api/auth', authRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/appointments', appointmentRoutes); 
-app.use('/api/ai', aiRoutes); // 👈 Enable AI route
-
+app.use('/api/ai', aiRoutes); 
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/receptionist', require('./routes/receptionistRoutes'));
-// Test Route
+app.use('/api/receptionist', receptionistRoutes);
+
+// 🚨 YAHAN DOCTOR ROUTES MOUNT KIYE HAIN 🚨
+app.use('/api/doctor', doctorRoutes);
+
+// Safe Test Route (JSON format mein taaki frontend crash na ho)
 app.get('/', (req, res) => {
-    res.send('API is running...');
+    res.json({ message: 'API is running successfully...' });
 });
 
 const PORT = process.env.PORT || 5000;

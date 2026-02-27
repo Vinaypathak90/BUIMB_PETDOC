@@ -1,5 +1,5 @@
 const Doctor = require('../models/Doctor');
-
+const Transaction = require('../models/Transaction');
 // ==========================================
 // 1. GET ALL DOCTORS (For Status Board)
 // ==========================================
@@ -121,5 +121,97 @@ exports.addDoctor = async (req, res) => {
         res.status(201).json(newDoc);
     } catch (err) {
         res.status(400).json({ message: err.message });
+    }
+};
+
+// =========================================================================
+// 🟢 SECTION 6: DOCTOR INVOICES & PAYMENTS
+// =========================================================================
+
+// 1. Fetch All Invoices for the Logged-in Doctor
+exports.getDoctorInvoices = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: "Not authorized." });
+
+        const doctor = await Doctor.findOne({ 
+            $or: [ { email: req.user.email }, { userId: req.user._id } ] 
+        });
+
+        if (!doctor) return res.status(404).json({ message: "Doctor profile not found." });
+
+        // Sirf is doctor ki transactions fetch karni hain jisme patient se paisa aaya ho
+        const transactions = await Transaction.find({ 
+            doctorName: doctor.name, // Mapping via doctor name based on your schema
+            flow: 'credit'           // Only income
+        }).sort({ createdAt: -1 });
+
+        // Frontend format mein map karna
+        const formattedInvoices = transactions.map(t => ({
+            _id: t._id,
+            id: t.invoiceId,
+            patient: t.name, // In your schema 'name' is the patient's name
+            date: new Date(t.date || t.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+            amount: t.amount,
+            status: t.status,
+            method: t.method || "Cash",
+            // Transaction model mein items nahi hain, toh hum service name use kar rahe hain
+            items: [{ desc: t.service || t.type, cost: t.amount, qty: 1 }], 
+            tax: 0,
+            img: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
+        }));
+
+        res.status(200).json(formattedInvoices);
+    } catch (error) {
+        console.error("Fetch Invoices Error:", error);
+        res.status(500).json({ message: "Failed to fetch invoices." });
+    }
+};
+
+// 2. Create a New Invoice (Generates a Transaction)
+exports.createDoctorInvoice = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: "Not authorized." });
+
+        const doctor = await Doctor.findOne({ 
+            $or: [ { email: req.user.email }, { userId: req.user._id } ] 
+        });
+
+        if (!doctor) return res.status(404).json({ message: "Doctor profile not found." });
+
+        const { patientName, items, status, totalAmount } = req.body;
+
+        const newTransaction = new Transaction({
+            user: req.user._id,
+            invoiceId: `INV-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 100)}`,
+            name: patientName,
+            doctorName: doctor.name,
+            type: "Consultation",
+            service: items.length > 0 ? items[0].desc : "General Checkup",
+            amount: totalAmount,
+            flow: "credit",
+            status: status || "Pending",
+            method: "Cash", // Default, can be updated later
+            date: new Date()
+        });
+
+        await newTransaction.save();
+
+        res.status(201).json({ 
+            message: "Invoice created successfully.", 
+            invoice: {
+                id: newTransaction.invoiceId,
+                patient: newTransaction.name,
+                date: new Date(newTransaction.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+                amount: newTransaction.amount,
+                status: newTransaction.status,
+                items: items,
+                tax: 0,
+                img: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
+            }
+        });
+
+    } catch (error) {
+        console.error("Create Invoice Error:", error);
+        res.status(500).json({ message: "Failed to create invoice." });
     }
 };
