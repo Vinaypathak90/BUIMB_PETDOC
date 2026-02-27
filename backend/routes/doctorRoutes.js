@@ -22,9 +22,11 @@ const doctorController = require('../controllers/doctorController');
 // ==========================================
 // 3. PATIENT MANAGEMENT (MY PATIENTS)
 // ==========================================
-//router.get('/patients', protect, doctorController.getDoctorPatients);           
-//router.post('/patients', protect, doctorController.addDoctorPatient);           
-//router.delete('/patients/:id', protect, doctorController.deleteDoctorPatient);  
+router.get('/patients', protect, doctorController.getDoctorPatients);           
+router.post('/patients', protect, doctorController.addDoctorPatient);           
+router.delete('/patients/:id', protect, doctorController.deleteDoctorPatient);  
+router.put('/patients/:id', protect, doctorController.updateDoctorPatient);
+router.put('/patients/:id/records', protect, doctorController.addPatientRecord);
 
 // ==========================================
 // 8. APPOINTMENTS & LIVE CONSULTATION

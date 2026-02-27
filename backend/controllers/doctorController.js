@@ -1,6 +1,7 @@
 const Doctor = require('../models/Doctor');
 const Transaction = require('../models/Transaction');
 const Appointment = require('../models/Appointment');
+const Patient = require('../models/Patient');
 
 // ==========================================
 // 1. GET ALL DOCTORS (For Status Board)
@@ -119,6 +120,8 @@ exports.addDoctor = async (req, res) => {
         res.status(400).json({ message: err.message });
     }
 };
+
+
 
 // =========================================================================
 // 🟢 SECTION 6: DOCTOR INVOICES & PAYMENTS
@@ -405,5 +408,269 @@ exports.updateAppointmentStatus = async (req, res) => {
     } catch (error) {
         console.error("Status Update Error:", error);
         res.status(500).json({ message: "Failed to update status." });
+    }
+};
+
+
+// =========================================================================
+// 🟡 SECTION 3: PATIENT MANAGEMENT (MY PATIENTS)
+// =========================================================================
+
+/// 1. Fetch all Patients (Merged from Appointments + Manual Entries)
+exports.getDoctorPatients = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: "Not authorized." });
+
+        const doctor = await Doctor.findOne({ $or: [ { email: req.user.email }, { userId: req.user._id } ] });
+        if (!doctor) return res.status(404).json({ message: "Doctor not found." });
+
+        // Fetch Doctor's Data
+        const doctorAppointments = await Appointment.find({ doctorId: doctor._id }).sort({ createdAt: -1 });
+        const doctorTransactions = await Transaction.find({ doctorName: doctor.name }).sort({ createdAt: -1 });
+        const manualPatients = await Patient.find().sort({ createdAt: -1 });
+
+        // Use a Map to ensure unique patients (Key: Phone number or Name)
+        const patientMap = new Map();
+
+        // Step A: Load Manually Added Patients
+        manualPatients.forEach(p => {
+            patientMap.set(p.phone || p.name, {
+                id: p.patientId, // Custom ID like PT1234
+                _id: p._id,      // MongoDB ID
+                name: p.name,
+                age: p.age || "N/A",
+                gender: p.gender || "N/A",
+                bloodGroup: "O+", 
+                phone: p.phone,
+                email: "N/A",
+                location: p.address || "Unknown Location",
+                img: p.img || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=random&color=fff`,
+                status: p.status === 'active' ? 'Active' : 'Inactive',
+                isManual: true,
+                records: p.records || [] // External records saved manually
+            });
+        });
+
+        // Step B: Load Patients from Appointments (Who are not in manual list)
+        doctorAppointments.forEach(app => {
+            const key = app.phone || app.patientName;
+            if (!patientMap.has(key)) {
+                patientMap.set(key, {
+                    id: `APT-${app._id.toString().slice(-5).toUpperCase()}`, // Auto ID for UI
+                    _id: app._id,
+                    name: app.type === 'pet' ? (app.petName || app.patientName) : app.patientName,
+                    age: app.age || "N/A",
+                    gender: app.gender || "N/A",
+                    bloodGroup: "Unknown",
+                    phone: app.phone || "N/A",
+                    email: "N/A",
+                    location: app.address || "Unknown Location",
+                    img: app.type === 'pet' ? "https://cdn-icons-png.flaticon.com/512/2950/2950648.png" : `https://ui-avatars.com/api/?name=${encodeURIComponent(app.patientName)}&background=random&color=fff`,
+                    status: 'Active',
+                    isManual: false,
+                    records: []
+                });
+            }
+        });
+
+        // Step C: Process each unique patient (Attach History, Vitals, Bills, Records)
+        const formattedPatients = Array.from(patientMap.values()).map(p => {
+            
+            // 1. History
+            const patHistory = doctorAppointments.filter(app => app.phone === p.phone || app.patientName === p.name);
+            const mappedHistory = patHistory.map(app => ({
+                id: app._id,
+                date: app.date,
+                time: app.time,
+                purpose: app.problem || app.speciality || "Consultation",
+                type: app.visitType || app.type || "Clinic",
+                status: app.status,
+                fee: app.fee
+            }));
+
+            // 2. Vitals (From the latest completed appointment)
+            const completedApps = patHistory.filter(a => a.status === 'Completed' && a.prescription && a.prescription.vitals);
+            let latestVitals = { bp: "-", heartRate: "-", glucose: "-", temp: "-" };
+            
+            if (completedApps.length > 0) {
+                const latest = completedApps[0].prescription.vitals; // latest first
+                latestVitals = { bp: latest.bp || "-", heartRate: latest.pulse || "-", glucose: "-", temp: latest.temp || "-" };
+            }
+
+            // 3. Bills
+            const bills = doctorTransactions.filter(b => b.name === p.name || b.phone === p.phone);
+            const mappedBills = bills.map(b => ({
+                id: b.invoiceId,
+                date: new Date(b.date || b.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+                amount: b.amount,
+                status: b.status
+            }));
+            const totalPaid = bills.filter(b => b.status === 'Paid').reduce((acc, curr) => acc + curr.amount, 0) || 0;
+
+            // 4. Records (Merge Manual Records with Completed Appointment Prescriptions)
+            const autoRecords = completedApps.map(app => ({
+                id: app._id,
+                date: app.date,
+                title: `Prescription: ${app.problem || 'Checkup'}`,
+                type: "Rx",
+                doctor: doctor.name,
+                details: app.prescription // This allows UI to show full Rx details
+            }));
+
+            const allRecords = [...(p.records || []), ...autoRecords];
+
+            return {
+                ...p,
+                lastVisit: patHistory.length > 0 ? patHistory[0].date : "New Patient",
+                totalPaid,
+                vitals: latestVitals,
+                history: mappedHistory,
+                bills: mappedBills,
+                records: allRecords
+            };
+        });
+
+        // Sort latest active patients first
+        formattedPatients.sort((a, b) => new Date(b.lastVisit) - new Date(a.lastVisit));
+
+        res.status(200).json(formattedPatients);
+    } catch (error) {
+        console.error("Fetch Patients Error:", error);
+        res.status(500).json({ message: "Failed to fetch patients.", error: error.message });
+    }
+};
+
+// 2. Add a new Patient Manually by Doctor
+exports.addDoctorPatient = async (req, res) => {
+    try {
+        const { firstName, lastName, phone, email, age, gender, bloodGroup, location } = req.body;
+        const generatedPatientId = `PT${Math.floor(Math.random() * 10000)}${Date.now().toString().slice(-3)}`;
+
+        const newPatient = new Patient({
+            patientId: generatedPatientId,
+            name: `${firstName} ${lastName}`.trim(),
+            type: 'human', 
+            phone, age, gender, 
+            address: location,
+            lastVisit: "Just Added",
+            status: 'active'
+        });
+
+        await newPatient.save();
+        
+        res.status(201).json({ 
+            message: "Patient added!", 
+            patient: {
+                id: newPatient.patientId, 
+                _id: newPatient._id,
+                name: newPatient.name, 
+                age: newPatient.age,
+                gender: newPatient.gender, 
+                bloodGroup: bloodGroup || "O+",
+                phone: newPatient.phone, 
+                email: email || "N/A",
+                location: newPatient.address,
+                img: `https://ui-avatars.com/api/?name=${encodeURIComponent(newPatient.name)}&background=random&color=fff`,
+                lastVisit: newPatient.lastVisit, 
+                totalPaid: 0, 
+                status: 'Active',
+                vitals: { bp: "-", heartRate: "-", glucose: "-", temp: "-" },
+                history: [], bills: [], records: [],
+                isManual: true
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Failed to add patient.", error: error.message });
+    }
+};
+
+// 3. Delete a Patient (Manual only)
+exports.deleteDoctorPatient = async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        let patient = await Patient.findOneAndDelete({ patientId: id });
+        if (!patient && id.match(/^[0-9a-fA-F]{24}$/)) {
+            patient = await Patient.findByIdAndDelete(id);
+        }
+
+        if (!patient) return res.status(404).json({ message: "Patient not found in records." });
+
+        res.status(200).json({ message: "Patient deleted successfully." });
+    } catch (error) {
+        console.error("Delete Patient Error:", error);
+        res.status(500).json({ message: "Failed to delete patient.", error: error.message });
+    }
+};
+
+// 4. Update an existing Patient (Manual entries)
+exports.updateDoctorPatient = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { firstName, lastName, phone, email, age, gender, bloodGroup, location } = req.body;
+
+        const updateData = {
+            name: `${firstName} ${lastName}`.trim(),
+            phone,
+            age,
+            gender,
+            address: location
+        };
+
+        let patient = await Patient.findOneAndUpdate(
+            { patientId: id },
+            { $set: updateData },
+            { new: true }
+        );
+
+        if (!patient && id.match(/^[0-9a-fA-F]{24}$/)) {
+            patient = await Patient.findByIdAndUpdate(
+                id,
+                { $set: updateData },
+                { new: true }
+            );
+        }
+
+        if (!patient) return res.status(404).json({ message: "Patient not found." });
+
+        res.status(200).json({ message: "Patient updated successfully.", patient });
+    } catch (error) {
+        console.error("Update Patient Error:", error);
+        res.status(500).json({ message: "Failed to update patient.", error: error.message });
+    }
+};
+
+// 5. Add External Record to Patient Profile
+exports.addPatientRecord = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, date, type, doctor } = req.body;
+        
+        const newRecord = {
+            id: Date.now().toString(),
+            title: title || "New Medical Document",
+            date: date || new Date().toLocaleDateString('en-GB', {day: 'numeric', month: 'short', year: 'numeric'}),
+            type: type || "Rx",
+            doctor: doctor || "You"
+        };
+
+        let patient = await Patient.findOne({ patientId: id });
+        if (!patient && id.match(/^[0-9a-fA-F]{24}$/)) {
+            patient = await Patient.findById(id);
+        }
+
+        if(!patient) return res.status(404).json({message: "Patient not found."});
+
+        // Agar schema me records field nahi hai, to usme temporary array store karega (Mongoose strict schema false pe)
+        if(!patient.records) patient.records = [];
+        patient.records.unshift(newRecord);
+
+        await patient.save();
+
+        res.status(200).json({ message: "Record added successfully", record: newRecord });
+
+    } catch(err) {
+        console.error("Add Record Error:", err);
+        res.status(500).json({ message: "Failed to add record." });
     }
 };

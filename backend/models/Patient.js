@@ -33,7 +33,10 @@ const patientSchema = mongoose.Schema({
         default: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png' 
     },
     medicalHistory: { type: String }, // Stores file name
-
+phone: { type: String, required: true },
+email: { type: String },         // 👈 YEH ADD KARO
+bloodGroup: { type: String },    // 👈 YEH ADD KARO
+address: { type: String },
     status: { 
         type: String, 
         enum: ['active', 'inactive'], 
