@@ -36,7 +36,6 @@ exports.getAllDoctors = async (req, res) => {
             nextSlot: doc.nextFree, // ✅ Mapped 'nextFree' to 'nextSlot'
             avatar: doc.img,      // ✅ Mapped
             contact: doc.contact,
-            isOnline: doc.isOnline
         }));
 
         res.status(200).json(formattedDoctors);
@@ -98,11 +97,6 @@ exports.updateDoctorStatus = async (req, res) => {
             name: doctor.name,
             dept: doctor.speciality,
             room: doctor.room,
-            // Format for UI (Capitalize first letter)
-            status: nextStatus.charAt(0).toUpperCase() + nextStatus.slice(1), 
-            nextSlot: nextTime,
-            avatar: doctor.img,
-            contact: doctor.contact
         });
 
     } catch (err) {
@@ -191,7 +185,7 @@ exports.createDoctorInvoice = async (req, res) => {
             flow: "credit",
             status: status || "Pending",
             method: "Cash", // Default, can be updated later
-            date: new Date()
+            date: new Date(),  
         });
 
         await newTransaction.save();
@@ -268,5 +262,52 @@ exports.updateDoctorSchedule = async (req, res) => {
     } catch (error) {
         console.error("Update Schedule Error:", error);
         res.status(500).json({ message: "Failed to update schedule." });
+    }
+};
+// =========================================================================
+// 🟠 SECTION 4: SPECIALTIES & SERVICES (Doctor Panel)
+// =========================================================================
+
+// 1. Fetch Doctor's Specialties & Services
+exports.getSpecialties = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: "Not authorized." });
+
+        const doctor = await Doctor.findOne({ 
+            $or: [ { email: req.user.email }, { userId: req.user._id } ] 
+        }).select('specialties');
+
+        if (!doctor) return res.status(404).json({ message: "Doctor not found." });
+
+        // Agar empty hai toh empty array bhejo
+        res.status(200).json(doctor.specialties || []);
+    } catch (error) {
+        console.error("Fetch Specialties Error:", error);
+        res.status(500).json({ message: "Failed to fetch specialties." });
+    }
+};
+
+// 2. Update/Save Doctor's Specialties & Services
+exports.updateSpecialties = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: "Not authorized." });
+
+        const { specialties } = req.body; // Frontend se pura array aayega
+
+        const updatedDoctor = await Doctor.findOneAndUpdate(
+            { $or: [ { email: req.user.email }, { userId: req.user._id } ] },
+            { specialties: specialties },
+            { new: true } 
+        ).select('specialties');
+
+        if (!updatedDoctor) return res.status(404).json({ message: "Doctor not found." });
+
+        res.status(200).json({ 
+            message: "Specialties saved successfully!", 
+            specialties: updatedDoctor.specialties 
+        });
+    } catch (error) {
+        console.error("Save Specialties Error:", error);
+        res.status(500).json({ message: "Failed to save specialties." });
     }
 };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import DoctorSidebar from '../../components/doctor/DoctorSidebar'; 
 import { 
   Menu, Bell, Plus, Trash2, Save, ChevronDown, CheckCircle, 
@@ -8,25 +8,10 @@ import {
 const DoctorSpecialties = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showToast, setShowToast] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // --- MOCK DATA ---
-  const [specialties, setSpecialties] = useState([
-    { 
-      id: 1, 
-      name: "Cardiology", 
-      services: [
-        { id: 101, name: "Consultation", price: "800", description: "General heart checkup and initial diagnosis." },
-        { id: 102, name: "ECG Test", price: "1200", description: "Electrocardiogram test for heart rhythm." }
-      ] 
-    },
-    { 
-      id: 2, 
-      name: "Neurology", 
-      services: [
-        { id: 201, name: "Brain MRI Analysis", price: "2500", description: "Detailed analysis of MRI reports." }
-      ] 
-    }
-  ]);
+  // --- STATE ---
+  const [specialties, setSpecialties] = useState([]);
 
   // --- AUTO-SUGGESTION STATE ---
   const [activeSuggestion, setActiveSuggestion] = useState({ specId: null, svcId: null, list: [] });
@@ -43,83 +28,142 @@ const DoctorSpecialties = () => {
 
   // Dropdown Options for Specialty
   const specialityOptions = [
-    "Cardiology", "Neurology", "Dentist", "Orthopedic", 
-    "Pediatrics", "Dermatology", "Gynecology", "General Surgery"
+    "Cardiologist", "Neurologist", "Dentist", "Orthopedic", 
+    "Pediatrician", "Dermatologist", "Gynecologist", "General Physician", "Surgeon"
   ];
 
+  // 🧠 SMART TOKEN HELPER
+  const getToken = () => {
+    let token = "";
+    try {
+        const uToken = JSON.parse(localStorage.getItem('user_token'));
+        const uInfo = JSON.parse(localStorage.getItem('userInfo'));
+        const uRaw = localStorage.getItem('token');
+        if (uToken?.token) token = uToken.token;
+        else if (uInfo?.token) token = uInfo.token;
+        else if (uRaw && !uRaw.startsWith('{')) token = uRaw;
+    } catch (e) {}
+    return token;
+  };
+
+  // --- 1. FETCH DATA ON LOAD ---
+  useEffect(() => {
+    const fetchSpecialties = async () => {
+      try {
+        const token = getToken();
+        if (!token) {
+            setIsLoading(false);
+            return;
+        }
+
+        const res = await fetch('http://localhost:5000/api/doctor/specialties', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        const data = await res.json();
+        if (res.ok) {
+            setSpecialties(data || []);
+        }
+      } catch (error) {
+        console.error("Fetch Error:", error);
+      } finally {
+          setIsLoading(false);
+      }
+    };
+    fetchSpecialties();
+  }, []);
+
+
   // --- HANDLERS ---
-
-  // 1. Service Input Change with Auto-Suggest Logic
   const handleServiceInputChange = (specId, svcId, value) => {
-    // Update Value
     handleUpdateService(specId, svcId, 'name', value);
-
-    // Filter Suggestions
     if (value.length > 0) {
-        const filtered = serviceDatabase.filter(s => 
-            s.toLowerCase().includes(value.toLowerCase())
-        );
+        const filtered = serviceDatabase.filter(s => s.toLowerCase().includes(value.toLowerCase()));
         setActiveSuggestion({ specId, svcId, list: filtered });
     } else {
         setActiveSuggestion({ specId: null, svcId: null, list: [] });
     }
   };
 
-  // 2. Select a Suggestion
   const handleSelectSuggestion = (specId, svcId, value) => {
     handleUpdateService(specId, svcId, 'name', value);
-    setActiveSuggestion({ specId: null, svcId: null, list: [] }); // Hide list
+    setActiveSuggestion({ specId: null, svcId: null, list: [] }); 
   };
 
   const handleAddSpecialty = () => {
     const newSpec = {
-      id: Date.now(),
+      id: Date.now().toString(),
       name: "",
-      services: [{ id: Date.now() + 1, name: "", price: "", description: "" }]
+      services: [{ id: (Date.now() + 1).toString(), name: "", price: "", description: "" }]
     };
     setSpecialties([newSpec, ...specialties]);
   };
 
   const handleRemoveSpecialty = (id) => {
     if(window.confirm("Delete this entire specialty?")) {
-        setSpecialties(specialties.filter(s => s.id !== id));
+        setSpecialties(specialties.filter(s => s.id !== id && s._id !== id));
     }
   };
 
   const handleUpdateSpecialtyName = (id, newName) => {
-    setSpecialties(specialties.map(s => s.id === id ? { ...s, name: newName } : s));
+    setSpecialties(specialties.map(s => (s.id === id || s._id === id) ? { ...s, name: newName } : s));
   };
 
   const handleAddService = (specId) => {
-    const newService = { id: Date.now(), name: "", price: "", description: "" };
+    const newService = { id: Date.now().toString(), name: "", price: "", description: "" };
     setSpecialties(specialties.map(s => 
-        s.id === specId ? { ...s, services: [...s.services, newService] } : s
+        (s.id === specId || s._id === specId) ? { ...s, services: [...(s.services || []), newService] } : s
     ));
   };
 
   const handleRemoveService = (specId, serviceId) => {
     setSpecialties(specialties.map(s => 
-        s.id === specId ? { ...s, services: s.services.filter(svc => svc.id !== serviceId) } : s
+        (s.id === specId || s._id === specId) ? { ...s, services: s.services.filter(svc => svc.id !== serviceId && svc._id !== serviceId) } : s
     ));
   };
 
   const handleUpdateService = (specId, serviceId, field, value) => {
     setSpecialties(specialties.map(s => 
-        s.id === specId ? { 
+        (s.id === specId || s._id === specId) ? { 
             ...s, 
-            services: s.services.map(svc => svc.id === serviceId ? { ...svc, [field]: value } : svc)
+            services: s.services.map(svc => (svc.id === serviceId || svc._id === serviceId) ? { ...svc, [field]: value } : svc)
         } : s
     ));
   };
 
-  const handleSave = () => {
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
+  // --- 2. SAVE DATA TO BACKEND ---
+  const handleSave = async () => {
+    try {
+        const token = getToken();
+        if (!token) return alert("Not authorized. Please login again.");
+
+        const res = await fetch('http://localhost:5000/api/doctor/specialties', {
+            method: 'PUT',
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json' 
+            },
+            body: JSON.stringify({ specialties })
+        });
+
+        if (res.ok) {
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 3000);
+        } else {
+            const data = await res.json();
+            alert(`Failed to save: ${data.message}`);
+        }
+    } catch (error) {
+        console.error("Save Error:", error);
+        alert("An error occurred while saving.");
+    }
   };
 
   // Calculations
   const totalSpecialties = specialties.length;
-  const totalServices = specialties.reduce((acc, curr) => acc + curr.services.length, 0);
+  const totalServices = specialties.reduce((acc, curr) => acc + (curr.services?.length || 0), 0);
+
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-500 bg-[#f0f4f8]">Loading Services...</div>;
 
   return (
     <div className="bg-[#f0f4f8] min-h-screen relative font-sans">
@@ -130,7 +174,7 @@ const DoctorSpecialties = () => {
             <CheckCircle size={24} className="text-white"/>
             <div>
                 <h4 className="font-bold">Updates Saved!</h4>
-                <p className="text-xs text-emerald-100">Your service catalog has been updated.</p>
+                <p className="text-xs text-emerald-100">Your service catalog has been saved to the database.</p>
             </div>
         </div>
       )}
@@ -183,7 +227,7 @@ const DoctorSpecialties = () => {
           {/* 2. Specialties List */}
           <div className="space-y-8 pb-20">
               {specialties.map((spec) => (
-                  <div key={spec.id} className="bg-white rounded-[2rem] shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 group border border-slate-100 hover:border-blue-100 transition-all">
+                  <div key={spec._id || spec.id} className="bg-white rounded-[2rem] shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 group border border-slate-100 hover:border-blue-100 transition-all">
                       
                       {/* --- HEADER --- */}
                       <div className="bg-slate-50 p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -195,9 +239,9 @@ const DoctorSpecialties = () => {
                                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1 block">Specialty Name</label>
                                   <div className="relative group/select">
                                       <select 
-                                        value={spec.name} 
-                                        onChange={(e) => handleUpdateSpecialtyName(spec.id, e.target.value)}
-                                        className="w-full md:w-72 bg-transparent font-black text-xl text-slate-800 outline-none appearance-none cursor-pointer border-b-2 border-transparent focus:border-[#00d0f1] transition-all py-1 pr-8"
+                                          value={spec.name || ""} 
+                                          onChange={(e) => handleUpdateSpecialtyName(spec._id || spec.id, e.target.value)}
+                                          className="w-full md:w-72 bg-transparent font-black text-xl text-slate-800 outline-none appearance-none cursor-pointer border-b-2 border-transparent focus:border-[#00d0f1] transition-all py-1 pr-8"
                                       >
                                           <option value="" disabled>Select Specialty</option>
                                           {specialityOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -207,8 +251,8 @@ const DoctorSpecialties = () => {
                               </div>
                           </div>
                           <button 
-                            onClick={() => handleRemoveSpecialty(spec.id)}
-                            className="text-slate-400 font-bold text-xs hover:text-red-500 hover:bg-red-50 px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
+                              onClick={() => handleRemoveSpecialty(spec._id || spec.id)}
+                              className="text-slate-400 font-bold text-xs hover:text-red-500 hover:bg-red-50 px-4 py-2 rounded-lg transition-colors flex items-center gap-2"
                           >
                               <Trash2 size={16}/> Remove
                           </button>
@@ -217,8 +261,8 @@ const DoctorSpecialties = () => {
                       {/* --- SERVICES --- */}
                       <div className="p-6">
                           <div className="space-y-3">
-                              {spec.services.map((svc) => (
-                                  <div key={svc.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center p-4 border border-slate-100 rounded-2xl hover:border-[#00d0f1]/50 hover:shadow-md transition-all bg-white group/row relative">
+                              {spec.services?.map((svc) => (
+                                  <div key={svc._id || svc.id} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center p-4 border border-slate-100 rounded-2xl hover:border-[#00d0f1]/50 hover:shadow-md transition-all bg-white group/row relative">
                                       
                                       {/* Name with Auto-Suggest */}
                                       <div className="md:col-span-4 relative">
@@ -226,16 +270,16 @@ const DoctorSpecialties = () => {
                                           <div className="relative">
                                               <Activity size={16} className="absolute top-3.5 left-3 text-slate-400 group-hover/row:text-[#00d0f1] transition-colors"/>
                                               <input 
-                                                type="text" 
-                                                placeholder="e.g. Consultation" 
-                                                value={svc.name}
-                                                onChange={(e) => handleServiceInputChange(spec.id, svc.id, e.target.value)}
-                                                className="w-full pl-10 p-3 bg-slate-50 border border-transparent rounded-xl text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-[#00d0f1] transition-all" 
+                                                  type="text" 
+                                                  placeholder="e.g. Consultation" 
+                                                  value={svc.name || ""}
+                                                  onChange={(e) => handleServiceInputChange(spec._id || spec.id, svc._id || svc.id, e.target.value)}
+                                                  className="w-full pl-10 p-3 bg-slate-50 border border-transparent rounded-xl text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-[#00d0f1] transition-all" 
                                               />
                                           </div>
 
                                           {/* Suggestions Dropdown */}
-                                          {activeSuggestion.specId === spec.id && activeSuggestion.svcId === svc.id && activeSuggestion.list.length > 0 && (
+                                          {activeSuggestion.specId === (spec._id || spec.id) && activeSuggestion.svcId === (svc._id || svc.id) && activeSuggestion.list.length > 0 && (
                                               <div className="absolute top-full left-0 w-full bg-white border border-slate-200 rounded-xl shadow-2xl mt-2 z-50 overflow-hidden animate-in fade-in zoom-in-95">
                                                   <div className="bg-slate-50 px-3 py-1.5 text-[10px] font-bold text-slate-400 flex items-center gap-1 uppercase tracking-wider">
                                                       <Sparkles size={10} className="text-[#00d0f1]"/> Suggested Services
@@ -243,9 +287,9 @@ const DoctorSpecialties = () => {
                                                   <div className="max-h-48 overflow-y-auto custom-scrollbar">
                                                       {activeSuggestion.list.map((suggestion, idx) => (
                                                           <div 
-                                                            key={idx}
-                                                            onClick={() => handleSelectSuggestion(spec.id, svc.id, suggestion)}
-                                                            className="px-4 py-3 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-[#00d0f1] cursor-pointer transition-colors"
+                                                              key={idx}
+                                                              onClick={() => handleSelectSuggestion(spec._id || spec.id, svc._id || svc.id, suggestion)}
+                                                              className="px-4 py-3 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-[#00d0f1] cursor-pointer transition-colors"
                                                           >
                                                               {suggestion}
                                                           </div>
@@ -261,11 +305,11 @@ const DoctorSpecialties = () => {
                                           <div className="relative">
                                               <IndianRupee size={16} className="absolute top-3.5 left-3 text-slate-400 group-hover/row:text-emerald-500 transition-colors"/>
                                               <input 
-                                                type="number" 
-                                                placeholder="0" 
-                                                value={svc.price}
-                                                onChange={(e) => handleUpdateService(spec.id, svc.id, 'price', e.target.value)}
-                                                className="w-full pl-10 p-3 bg-slate-50 border border-transparent rounded-xl text-sm font-black text-slate-700 outline-none focus:bg-white focus:border-emerald-500 transition-all" 
+                                                  type="number" 
+                                                  placeholder="0" 
+                                                  value={svc.price || ""}
+                                                  onChange={(e) => handleUpdateService(spec._id || spec.id, svc._id || svc.id, 'price', e.target.value)}
+                                                  className="w-full pl-10 p-3 bg-slate-50 border border-transparent rounded-xl text-sm font-black text-slate-700 outline-none focus:bg-white focus:border-emerald-500 transition-all" 
                                               />
                                           </div>
                                       </div>
@@ -276,11 +320,11 @@ const DoctorSpecialties = () => {
                                           <div className="relative">
                                               <FileText size={16} className="absolute top-3.5 left-3 text-slate-400"/>
                                               <input 
-                                                type="text" 
-                                                placeholder="Brief details..." 
-                                                value={svc.description}
-                                                onChange={(e) => handleUpdateService(spec.id, svc.id, 'description', e.target.value)}
-                                                className="w-full pl-10 p-3 bg-slate-50 border border-transparent rounded-xl text-sm font-medium text-slate-600 outline-none focus:bg-white focus:border-[#00d0f1] transition-all" 
+                                                  type="text" 
+                                                  placeholder="Brief details..." 
+                                                  value={svc.description || ""}
+                                                  onChange={(e) => handleUpdateService(spec._id || spec.id, svc._id || svc.id, 'description', e.target.value)}
+                                                  className="w-full pl-10 p-3 bg-slate-50 border border-transparent rounded-xl text-sm font-medium text-slate-600 outline-none focus:bg-white focus:border-[#00d0f1] transition-all" 
                                               />
                                           </div>
                                       </div>
@@ -288,8 +332,8 @@ const DoctorSpecialties = () => {
                                       {/* Actions */}
                                       <div className="md:col-span-1 flex justify-center pt-5">
                                           <button 
-                                            onClick={() => handleRemoveService(spec.id, svc.id)}
-                                            className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                              onClick={() => handleRemoveService(spec._id || spec.id, svc._id || svc.id)}
+                                              className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                           >
                                               <Trash2 size={20}/>
                                           </button>
@@ -299,8 +343,8 @@ const DoctorSpecialties = () => {
                           </div>
 
                           <button 
-                            onClick={() => handleAddService(spec.id)}
-                            className="mt-4 py-3 px-6 rounded-xl text-[#00d0f1] font-bold text-sm bg-blue-50/50 hover:bg-[#00d0f1] hover:text-white transition-all flex items-center gap-2"
+                              onClick={() => handleAddService(spec._id || spec.id)}
+                              className="mt-4 py-3 px-6 rounded-xl text-[#00d0f1] font-bold text-sm bg-blue-50/50 hover:bg-[#00d0f1] hover:text-white transition-all flex items-center gap-2"
                           >
                               <Plus size={18}/> Add Service Row
                           </button>

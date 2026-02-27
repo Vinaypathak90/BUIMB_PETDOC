@@ -29,8 +29,8 @@ const doctorController = require('../controllers/doctorController');
 // ==========================================
 // 4. SPECIALTIES & SERVICES
 // ==========================================
-//router.get('/specialties', protect, doctorController.getSpecialties);    
-//router.put('/specialties', protect, doctorController.updateSpecialties); 
+router.get('/specialties', protect, doctorController.getSpecialties);    
+router.put('/specialties', protect, doctorController.updateSpecialties); 
 
 // ==========================================
 // 5. INVOICES & BILLING (NEW) 🚀
