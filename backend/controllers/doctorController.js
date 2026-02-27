@@ -215,3 +215,58 @@ exports.createDoctorInvoice = async (req, res) => {
         res.status(500).json({ message: "Failed to create invoice." });
     }
 };
+// =========================================================================
+// ⏱️ SECTION 7: DOCTOR SCHEDULE & TIMINGS
+// =========================================================================
+
+// 1. Get Doctor's Schedule
+exports.getDoctorSchedule = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: "Not authorized." });
+
+        const doctor = await Doctor.findOne({ 
+            $or: [ { email: req.user.email }, { userId: req.user._id } ] 
+        }).select('schedule slotDuration');
+
+        if (!doctor) return res.status(404).json({ message: "Doctor profile not found." });
+
+        // Agar schedule null hai toh default structure bhejenge
+        const defaultSchedule = {
+            Sunday: [], Monday: [], Tuesday: [], Wednesday: [], Thursday: [], Friday: [], Saturday: []
+        };
+
+        res.status(200).json({
+            slotDuration: doctor.slotDuration || 30,
+            schedule: doctor.schedule || defaultSchedule
+        });
+    } catch (error) {
+        console.error("Fetch Schedule Error:", error);
+        res.status(500).json({ message: "Failed to fetch schedule." });
+    }
+};
+
+// 2. Update Doctor's Schedule
+exports.updateDoctorSchedule = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: "Not authorized." });
+
+        const { schedule, slotDuration } = req.body;
+
+        const doctor = await Doctor.findOneAndUpdate(
+            { $or: [ { email: req.user.email }, { userId: req.user._id } ] },
+            { schedule, slotDuration },
+            { new: true }
+        ).select('schedule slotDuration');
+
+        if (!doctor) return res.status(404).json({ message: "Doctor profile not found." });
+
+        res.status(200).json({ 
+            message: "Schedule updated successfully!",
+            slotDuration: doctor.slotDuration,
+            schedule: doctor.schedule
+        });
+    } catch (error) {
+        console.error("Update Schedule Error:", error);
+        res.status(500).json({ message: "Failed to update schedule." });
+    }
+};

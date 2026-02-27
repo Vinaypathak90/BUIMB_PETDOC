@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import DoctorSidebar from '../../components/doctor/DoctorSidebar'; 
 import { 
-  Menu, Bell, Calendar, Clock, Plus, Trash2, Save, 
-  CheckCircle, AlertCircle, X, ChevronDown, Monitor
+  Menu, Bell, Calendar, Clock, Plus, Save, 
+  X, ChevronDown, Monitor 
 } from 'lucide-react';
 
 const DoctorSchedule = () => {
@@ -10,49 +10,77 @@ const DoctorSchedule = () => {
   const [selectedDay, setSelectedDay] = useState('Monday');
   const [slotDuration, setSlotDuration] = useState('30'); // Minutes
   const [showAddModal, setShowAddModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
   // --- NEW SLOT STATE ---
   const [newSlot, setNewSlot] = useState({ start: '', end: '' });
 
-  // --- SCHEDULE STATE (Initial Mock Data) ---
+  // --- SCHEDULE STATE ---
   const [schedule, setSchedule] = useState({
-    Sunday: [],
-    Monday: [
-        { id: 1, start: '09:00', end: '10:00' },
-        { id: 2, start: '10:00', end: '11:00' }
-    ],
-    Tuesday: [
-        { id: 3, start: '14:00', end: '15:00' }
-    ],
-    Wednesday: [],
-    Thursday: [],
-    Friday: [
-        { id: 4, start: '09:00', end: '12:00' }
-    ],
-    Saturday: []
+    Sunday: [], Monday: [], Tuesday: [], Wednesday: [], Thursday: [], Friday: [], Saturday: []
   });
 
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-  // --- LOAD DATA ---
+  // 🧠 SMART TOKEN HELPER
+  const getToken = () => {
+    let token = "";
+    try {
+        const uToken = JSON.parse(localStorage.getItem('user_token'));
+        const uInfo = JSON.parse(localStorage.getItem('userInfo'));
+        const uRaw = localStorage.getItem('token');
+        if (uToken?.token) token = uToken.token;
+        else if (uInfo?.token) token = uInfo.token;
+        else if (uRaw && !uRaw.startsWith('{')) token = uRaw;
+    } catch (e) {}
+    return token;
+  };
+
+  // --- 1. FETCH DATA FROM BACKEND ---
   useEffect(() => {
-    const savedSchedule = JSON.parse(localStorage.getItem('doctorSchedule'));
-    if (savedSchedule) {
-        setSchedule(savedSchedule);
-    }
+    const fetchScheduleData = async () => {
+      try {
+        const token = getToken();
+        if (!token) {
+            setIsLoading(false);
+            return;
+        }
+
+        const res = await fetch('http://localhost:5000/api/doctor/schedule', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+          if (data.schedule && Object.keys(data.schedule).length > 0) {
+              setSchedule(data.schedule);
+          }
+          if (data.slotDuration) {
+              setSlotDuration(data.slotDuration.toString());
+          }
+        }
+      } catch (error) {
+        console.error("Fetch Schedule Error:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchScheduleData();
   }, []);
 
   // --- HANDLERS ---
-  
   const handleAddSlot = () => {
     if (!newSlot.start || !newSlot.end) return alert("Please select start and end time");
     if (newSlot.start >= newSlot.end) return alert("End time must be after start time");
 
-    const newEntry = { id: Date.now(), start: newSlot.start, end: newSlot.end };
+    // Adding unique ID for UI rendering
+    const newEntry = { id: Date.now().toString(), start: newSlot.start, end: newSlot.end };
     
     const updatedSchedule = {
         ...schedule,
-        [selectedDay]: [...schedule[selectedDay], newEntry]
+        [selectedDay]: [...(schedule[selectedDay] || []), newEntry]
     };
 
     setSchedule(updatedSchedule);
@@ -63,15 +91,47 @@ const DoctorSchedule = () => {
   const removeSlot = (id) => {
     const updatedSchedule = {
         ...schedule,
-        [selectedDay]: schedule[selectedDay].filter(slot => slot.id !== id)
+        // Match both UI 'id' and MongoDB '_id'
+        [selectedDay]: schedule[selectedDay].filter(slot => slot.id !== id && slot._id !== id) 
     };
     setSchedule(updatedSchedule);
   };
 
-  const handleSave = () => {
-    localStorage.setItem('doctorSchedule', JSON.stringify(schedule));
-    alert("Schedule Updated Successfully!");
+  // --- 2. SAVE DATA TO BACKEND ---
+  const handleSave = async () => {
+    try {
+        const token = getToken();
+        if (!token) return alert("You are not authorized. Please login again.");
+
+        // Show a loading state if you want, but simple fetch is fine here
+        const res = await fetch('http://localhost:5000/api/doctor/schedule', {
+            method: 'PUT',
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                schedule: schedule,
+                slotDuration: Number(slotDuration)
+            })
+        });
+
+        const data = await res.json();
+        
+        if (res.ok) {
+            alert("Schedule Updated Successfully!");
+        } else {
+            alert(`Failed: ${data.message}`);
+        }
+    } catch (error) {
+        console.error("Save Schedule Error:", error);
+        alert("Server error occurred while saving.");
+    }
   };
+
+  if (isLoading) {
+      return <div className="min-h-screen flex items-center justify-center bg-[#f8f9fa] font-bold text-[#192a56]">Loading Schedule...</div>;
+  }
 
   return (
     <div className="bg-[#f8f9fa] min-h-screen relative font-sans">
@@ -153,10 +213,10 @@ const DoctorSchedule = () => {
                     </div>
 
                     {/* Slots Grid */}
-                    {schedule[selectedDay].length > 0 ? (
+                    {schedule[selectedDay] && schedule[selectedDay].length > 0 ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                             {schedule[selectedDay].map((slot) => (
-                                <div key={slot.id} className="group relative bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-center hover:border-[#00d0f1] hover:shadow-md transition-all">
+                                <div key={slot._id || slot.id} className="group relative bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-center hover:border-[#00d0f1] hover:shadow-md transition-all">
                                     <div className="text-center">
                                         <div className="flex items-center gap-2 text-[#192a56] font-black text-lg">
                                             <Clock size={18}/> 
@@ -167,7 +227,7 @@ const DoctorSchedule = () => {
                                     
                                     {/* Delete Button (On Hover) */}
                                     <button 
-                                        onClick={() => removeSlot(slot.id)}
+                                        onClick={() => removeSlot(slot._id || slot.id)}
                                         className="absolute -top-2 -right-2 bg-red-500 text-white p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110"
                                     >
                                         <X size={14}/>

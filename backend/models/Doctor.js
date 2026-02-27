@@ -55,7 +55,18 @@ const doctorSchema = mongoose.Schema({
             price: { type: Number, default: 0 },
             description: { type: String }
         }]
-    }]
+    }],
+    // --- 📅 SCHEDULE & TIMINGS ---
+    slotDuration: { type: Number, default: 30 },
+    schedule: {
+        Sunday: [{ id: String, start: String, end: String }],
+        Monday: [{ id: String, start: String, end: String }],
+        Tuesday: [{ id: String, start: String, end: String }],
+        Wednesday: [{ id: String, start: String, end: String }],
+        Thursday: [{ id: String, start: String, end: String }],
+        Friday: [{ id: String, start: String, end: String }],
+        Saturday: [{ id: String, start: String, end: String }]
+    }
 
 }, 
 

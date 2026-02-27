@@ -38,13 +38,7 @@ const doctorController = require('../controllers/doctorController');
 router.get('/invoices', protect, doctorController.getDoctorInvoices);
 router.post('/invoices', protect, doctorController.createDoctorInvoice);
 
-
-// ==========================================
-// 6. ADMIN / GENERAL CLINIC ROUTES
-// ==========================================
-//router.get('/', doctorController.getAllDoctors);                  
-
-//router.post('/', protect, doctorController.addDoctor);            
-//router.put('/:id/status', protect, doctorController.updateDoctorStatus); 
+router.get('/schedule', protect, doctorController.getDoctorSchedule);
+router.put('/schedule', protect, doctorController.updateDoctorSchedule); 
 
 module.exports = router;
