@@ -27,6 +27,12 @@ const doctorController = require('../controllers/doctorController');
 //router.delete('/patients/:id', protect, doctorController.deleteDoctorPatient);  
 
 // ==========================================
+// 8. APPOINTMENTS & LIVE CONSULTATION
+// ==========================================
+router.get('/appointments', protect, doctorController.getDoctorAppointments);
+router.put('/appointments/:id/complete', protect, doctorController.completeConsultation);
+router.put('/appointments/:id/status', protect, doctorController.updateAppointmentStatus);
+// ==========================================
 // 4. SPECIALTIES & SERVICES
 // ==========================================
 router.get('/specialties', protect, doctorController.getSpecialties);    

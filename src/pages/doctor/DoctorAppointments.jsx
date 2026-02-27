@@ -11,10 +11,11 @@ import {
 
 const DoctorAppointments = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [viewState, setViewState] = useState('grid'); // 'grid', 'list', 'consultation'
+  const [viewState, setViewState] = useState('grid'); 
   const [activeTab, setActiveTab] = useState('upcoming'); 
   const [appointments, setAppointments] = useState([]);
-  const [filterType, setFilterType] = useState('All'); // All, Clinic, Home, Video
+  const [filterType, setFilterType] = useState('All'); 
+  const [isLoading, setIsLoading] = useState(true);
   
   // --- CONSULTATION STATE ---
   const [currentPatient, setCurrentPatient] = useState(null);
@@ -23,64 +24,42 @@ const DoctorAppointments = () => {
   const [vitals, setVitals] = useState({ temp: '', bp: '', pulse: '', weight: '', height: '', spo2: '' });
   const [clinicalNotes, setClinicalNotes] = useState({ symptoms: '', diagnosis: '', advice: '' });
 
-  // --- EXTENSIVE MOCK DATA ---
-  const mockData = [
-    { 
-      id: 101, patientName: "Aarav Sharma", type: "Video", age: "28", gender: "Male",
-      date: "2026-02-11", time: "10:30 AM", status: "Upcoming", 
-      email: "aarav.s@gmail.com", phone: "+91 98765 43210",
-      symptoms: "High Fever, Chills", purpose: "General Follow Up",
-      meetingLink: "meet.google.com/abc-xyz-123",
-      img: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=150&q=80"
-    },
-    { 
-      id: 102, patientName: "Priya Mehta", type: "Clinic", age: "34", gender: "Female",
-      date: "2026-02-11", time: "11:15 AM", status: "Upcoming", 
-      email: "priya.m@hotmail.com", phone: "+91 87654 32109",
-      symptoms: "Tooth Sensitivity", purpose: "Root Canal",
-      token: "A-12", room: "302",
-      img: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=150&q=80"
-    },
-    { 
-      id: 103, patientName: "Ramesh Gupta", type: "Home", age: "65", gender: "Male",
-      date: "2026-02-11", time: "02:00 PM", status: "Upcoming", 
-      email: "ramesh.g@yahoo.com", phone: "+91 76543 21098",
-      symptoms: "Post-Surgery Care", purpose: "Routine Checkup",
-      address: "Flat 402, Green Valley Apts, Bandra West, Mumbai",
-      coordinates: "19.0760, 72.8777",
-      img: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=150&q=80"
-    },
-    { 
-      id: 104, patientName: "Sonia Fernandez", type: "Clinic", age: "24", gender: "Female",
-      date: "2026-02-12", time: "09:30 AM", status: "Upcoming", 
-      email: "sonia.f@gmail.com", phone: "+1 555 019 2834",
-      symptoms: "Skin Rash", purpose: "Dermatology Consult",
-      token: "B-05", room: "101",
-      img: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=80"
-    },
-    { 
-      id: 105, patientName: "Vinay Pathak", type: "clinic", age: "40", gender: "Male",
-      date: "2026-02-12", time: "04:00 PM", status: "Upcoming", 
-      email: "vikram.singh@corp.com", phone: "+91 99887 76655",
-      symptoms: "Anxiety & Stress", purpose: "Mental Health",
-      meetingLink: "zoom.us/j/9988776655",
-      img: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=80"
-    },
-    { 
-      id: 106, patientName: "Grandma Rosie", type: "Home", age: "78", gender: "Female",
-      date: "2026-02-13", time: "10:00 AM", status: "Pending", 
-      email: "rosie.care@family.com", phone: "+1 202 555 0178",
-      symptoms: "Arthritis Pain", purpose: "Physiotherapy",
-      address: "78, Sunset Boulevard, Lokhandwala, Andheri",
-      coordinates: "19.1300, 72.8200",
-      img: "https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&w=150&q=80"
-    }
-  ];
+  // 🧠 SMART TOKEN HELPER
+  const getToken = () => {
+    let token = "";
+    try {
+        const uToken = JSON.parse(localStorage.getItem('user_token'));
+        const uInfo = JSON.parse(localStorage.getItem('userInfo'));
+        const uRaw = localStorage.getItem('token');
+        if (uToken?.token) token = uToken.token;
+        else if (uInfo?.token) token = uInfo.token;
+        else if (uRaw && !uRaw.startsWith('{')) token = uRaw;
+    } catch (e) {}
+    return token;
+  };
 
-  // --- INITIALIZATION ---
+  // --- INITIALIZATION (Fetch API) ---
   useEffect(() => {
-    // Ideally merge with localStorage here
-    setAppointments(mockData);
+    const fetchAppointments = async () => {
+        try {
+            const token = getToken();
+            if (!token) return;
+
+            const res = await fetch('http://localhost:5000/api/doctor/appointments', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                setAppointments(data);
+            }
+        } catch (error) {
+            console.error("Fetch error", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+    fetchAppointments();
   }, []);
 
   // --- TIMER LOGIC ---
@@ -110,15 +89,42 @@ const DoctorAppointments = () => {
     setClinicalNotes({ symptoms: app.symptoms, diagnosis: '', advice: '' });
   };
 
-  const handleEndAppointment = () => {
-    const updatedList = appointments.map(app => 
-        app.id === currentPatient.id ? { ...app, status: "Completed" } : app
-    );
-    setAppointments(updatedList);
-    // localStorage.setItem('myAppointments', JSON.stringify(updatedList)); 
-    setViewState('grid'); 
-    setCurrentPatient(null);
-    alert("Session Ended. Prescription Saved successfully!");
+  // --- 🚨 SAVE PRESCRIPTION & END CONSULTATION TO BACKEND 🚨 ---
+  const handleEndAppointment = async () => {
+    try {
+        const token = getToken();
+        if (!token) {
+            alert("Authorization Error. Please login again.");
+            return;
+        }
+
+        const payload = { vitals, clinicalNotes, medications };
+
+        const res = await fetch(`http://localhost:5000/api/doctor/appointments/${currentPatient.id}/complete`, {
+            method: 'PUT',
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            const updatedList = appointments.map(app => 
+                app.id === currentPatient.id ? { ...app, status: "Completed" } : app
+            );
+            setAppointments(updatedList);
+            setViewState('grid'); 
+            setCurrentPatient(null);
+            alert("Session Ended. Prescription Saved successfully!");
+        } else {
+            const errorData = await res.json();
+            alert(`Failed to save prescription: ${errorData.message}`);
+        }
+    } catch (error) {
+        console.error("Complete Appointment Error", error);
+        alert("Server error occurred while saving prescription.");
+    }
   };
 
   const addMedicationRow = () => {
@@ -131,11 +137,42 @@ const DoctorAppointments = () => {
     setMedications(newMeds);
   };
 
+  const handleMedChange = (index, field, value) => {
+      const newMeds = [...medications];
+      newMeds[index][field] = value;
+      setMedications(newMeds);
+  };
+
+  // Optional: Handle canceling an appointment quickly from grid
+  const handleCancelAppointment = async (appId) => {
+      if(!window.confirm("Are you sure you want to cancel this appointment?")) return;
+
+      try {
+          const token = getToken();
+          const res = await fetch(`http://localhost:5000/api/doctor/appointments/${appId}/status`, {
+              method: 'PUT',
+              headers: { 
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ status: 'Cancelled' })
+          });
+
+          if(res.ok) {
+             setAppointments(appointments.map(app => app.id === appId ? { ...app, status: 'Cancelled'} : app));
+          }
+      } catch(err) {
+          console.error("Cancel error", err);
+      }
+  };
+
   const filteredList = appointments.filter(app => {
-      const matchesTab = activeTab === 'all' ? true : app.status.toLowerCase() === activeTab;
+      const matchesTab = activeTab === 'all' ? true : app.status?.toLowerCase() === activeTab;
       const matchesType = filterType === 'All' ? true : app.type === filterType;
       return matchesTab && matchesType;
   });
+
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-500 bg-[#f0f4f8]">Loading Appointments...</div>;
 
   return (
     <div className="bg-[#f0f4f8] min-h-screen relative font-sans">
@@ -200,7 +237,7 @@ const DoctorAppointments = () => {
                         >
                             {tab}
                             <span className="ml-2 bg-white/20 px-1.5 py-0.5 rounded text-[10px]">
-                                {appointments.filter(a => a.status.toLowerCase() === tab).length}
+                                {appointments.filter(a => a.status?.toLowerCase() === tab).length}
                             </span>
                         </button>
                     ))}
@@ -228,7 +265,7 @@ const DoctorAppointments = () => {
                                     <img src={app.img} alt="" className="w-16 h-16 rounded-2xl object-cover shadow-sm border border-slate-100" />
                                     <div>
                                         <h3 className="text-lg font-black text-slate-800">{app.patientName}</h3>
-                                        <p className="text-xs text-slate-500 font-bold">ID: #APT00{app.id}</p>
+                                        <p className="text-xs text-slate-500 font-bold">ID: #APT00{app.id.toString().slice(-4).toUpperCase()}</p>
                                         <p className="text-xs text-slate-400 mt-1">{app.age} Yrs • {app.gender}</p>
                                     </div>
                                 </div>
@@ -242,23 +279,13 @@ const DoctorAppointments = () => {
                                         <Clock size={16} className="text-[#00d0f1]"/> 
                                         <span className="font-bold">{app.time}</span>
                                     </div>
-                                    {/* Conditional Address/Link Display */}
                                     <div className="flex items-center gap-3 text-sm text-slate-600">
                                         {app.type === 'Home' ? (
-                                            <>
-                                                <MapPin size={16} className="text-orange-500"/>
-                                                <span className="truncate w-48 text-xs">{app.address}</span>
-                                            </>
+                                            <><MapPin size={16} className="text-orange-500"/><span className="truncate w-48 text-xs">{app.address}</span></>
                                         ) : app.type === 'Video' ? (
-                                            <>
-                                                <Video size={16} className="text-purple-500"/>
-                                                <span className="truncate w-48 text-xs">Online Call</span>
-                                            </>
+                                            <><Video size={16} className="text-purple-500"/><span className="truncate w-48 text-xs">Online Call</span></>
                                         ) : (
-                                            <>
-                                                <Layout size={16} className="text-blue-500"/>
-                                                <span className="truncate w-48 text-xs">Room {app.room} • Token {app.token}</span>
-                                            </>
+                                            <><Layout size={16} className="text-blue-500"/><span className="truncate w-48 text-xs">Room {app.room} • Token {app.token}</span></>
                                         )}
                                     </div>
                                 </div>
@@ -273,7 +300,10 @@ const DoctorAppointments = () => {
                                             >
                                                 <Play size={14} fill="currentColor"/> Start Now
                                             </button>
-                                            <button className="p-3 border border-slate-200 text-slate-400 rounded-xl hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors">
+                                            <button 
+                                                onClick={() => handleCancelAppointment(app.id)}
+                                                className="p-3 border border-slate-200 text-slate-400 rounded-xl hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors"
+                                            >
                                                 <XCircle size={20} />
                                             </button>
                                         </>
@@ -285,6 +315,7 @@ const DoctorAppointments = () => {
                                 </div>
                             </div>
                         ))}
+                        {filteredList.length === 0 && <div className="col-span-3 text-center py-10 font-bold text-slate-400">No appointments found.</div>}
                     </div>
                 )}
 
@@ -308,7 +339,7 @@ const DoctorAppointments = () => {
                                             <img src={app.img} className="w-10 h-10 rounded-full object-cover" alt=""/>
                                             <div>
                                                 <p className="font-bold text-slate-800 text-sm">{app.patientName}</p>
-                                                <p className="text-[10px] text-slate-400">#APT00{app.id}</p>
+                                                <p className="text-[10px] text-slate-400">#APT00{app.id.toString().slice(-4).toUpperCase()}</p>
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
@@ -353,7 +384,7 @@ const DoctorAppointments = () => {
                         <button onClick={() => setViewState('grid')} className="p-2 hover:bg-slate-100 rounded-full"><ChevronLeft size={24}/></button>
                         <div>
                             <h2 className="text-lg font-black text-slate-800">{currentPatient.patientName}</h2>
-                            <p className="text-xs text-slate-500">ID: #APT00{currentPatient.id} • {currentPatient.age} Yrs • {currentPatient.gender}</p>
+                            <p className="text-xs text-slate-500">ID: #APT00{currentPatient.id.toString().slice(-4).toUpperCase()} • {currentPatient.age} Yrs • {currentPatient.gender}</p>
                         </div>
                     </div>
                     <div className="bg-red-50 text-red-600 px-4 py-2 rounded-xl flex items-center gap-2 font-mono font-bold">
@@ -392,18 +423,11 @@ const DoctorAppointments = () => {
                                         <h3 className="text-lg font-black text-orange-800">Home Visit Required</h3>
                                     </div>
                                     <p className="text-sm text-slate-600 font-medium mb-1">{currentPatient.address}</p>
-                                    <p className="text-xs text-slate-400">Coords: {currentPatient.coordinates}</p>
                                     <div className="flex gap-3 mt-4">
                                         <button className="bg-orange-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-orange-700 shadow-lg shadow-orange-600/20">
                                             <Navigation size={16}/> Start Navigation
                                         </button>
-                                        <button className="bg-white text-orange-600 border border-orange-200 px-4 py-2 rounded-lg text-sm font-bold hover:bg-orange-50">
-                                            Copy Address
-                                        </button>
                                     </div>
-                                </div>
-                                <div className="w-full md:w-48 h-32 bg-orange-200 rounded-xl flex items-center justify-center">
-                                    <span className="text-orange-800 font-bold text-xs">Map Placeholder</span>
                                 </div>
                             </div>
                         )}
@@ -427,10 +451,10 @@ const DoctorAppointments = () => {
                         <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm mb-6">
                             <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Activity size={18} className="text-[#00d0f1]"/> Vitals Check</h3>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                {[{l:'Temp (F)', p:'98.6'}, {l:'BP', p:'120/80'}, {l:'Pulse', p:'72'}, {l:'Weight', p:'70'}].map((v,i) => (
+                                {[{l:'Temp (F)', p:'98.6', k: 'temp'}, {l:'BP', p:'120/80', k: 'bp'}, {l:'Pulse', p:'72', k: 'pulse'}, {l:'Weight', p:'70', k: 'weight'}].map((v,i) => (
                                     <div key={i}>
                                         <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">{v.l}</label>
-                                        <input type="text" className="w-full p-2 border border-slate-200 rounded-lg text-sm font-bold focus:border-[#00d0f1] outline-none" placeholder={v.p} />
+                                        <input type="text" value={vitals[v.k]} onChange={(e) => setVitals({...vitals, [v.k]: e.target.value})} className="w-full p-2 border border-slate-200 rounded-lg text-sm font-bold focus:border-[#00d0f1] outline-none" placeholder={v.p} />
                                     </div>
                                 ))}
                             </div>
@@ -445,7 +469,7 @@ const DoctorAppointments = () => {
                                 </div>
                                 <div>
                                     <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Diagnosis</label>
-                                    <input type="text" className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium focus:border-[#00d0f1] outline-none" placeholder="Enter diagnosis..." />
+                                    <input type="text" value={clinicalNotes.diagnosis} onChange={(e)=>setClinicalNotes({...clinicalNotes, diagnosis: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium focus:border-[#00d0f1] outline-none" placeholder="Enter diagnosis..." />
                                 </div>
                             </div>
                         </div>
@@ -463,10 +487,10 @@ const DoctorAppointments = () => {
                                 {medications.map((med, index) => (
                                     <div key={index} className="bg-slate-50 p-3 rounded-xl border border-slate-100 relative group">
                                         <button onClick={() => removeMedicationRow(index)} className="absolute top-2 right-2 text-slate-300 hover:text-red-500"><X size={14}/></button>
-                                        <input type="text" placeholder="Medicine Name" className="bg-transparent w-full text-sm font-bold text-slate-800 outline-none mb-2" />
+                                        <input type="text" value={med.name} onChange={(e) => handleMedChange(index, 'name', e.target.value)} placeholder="Medicine Name" className="bg-transparent w-full text-sm font-bold text-slate-800 outline-none mb-2" />
                                         <div className="flex gap-2">
-                                            <input type="text" placeholder="1-0-1" className="bg-white w-1/2 p-1 text-xs border border-slate-200 rounded text-center outline-none" />
-                                            <input type="text" placeholder="5 Days" className="bg-white w-1/2 p-1 text-xs border border-slate-200 rounded text-center outline-none" />
+                                            <input type="text" value={med.dosage} onChange={(e) => handleMedChange(index, 'dosage', e.target.value)} placeholder="1-0-1" className="bg-white w-1/2 p-1 text-xs border border-slate-200 rounded text-center outline-none" />
+                                            <input type="text" value={med.duration} onChange={(e) => handleMedChange(index, 'duration', e.target.value)} placeholder="5 Days" className="bg-white w-1/2 p-1 text-xs border border-slate-200 rounded text-center outline-none" />
                                         </div>
                                     </div>
                                 ))}

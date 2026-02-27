@@ -1,5 +1,7 @@
 const Doctor = require('../models/Doctor');
 const Transaction = require('../models/Transaction');
+const Appointment = require('../models/Appointment');
+
 // ==========================================
 // 1. GET ALL DOCTORS (For Status Board)
 // ==========================================
@@ -309,5 +311,99 @@ exports.updateSpecialties = async (req, res) => {
     } catch (error) {
         console.error("Save Specialties Error:", error);
         res.status(500).json({ message: "Failed to save specialties." });
+    }
+};
+// =========================================================================
+// 🩺 SECTION 8: DOCTOR APPOINTMENTS & CONSULTATION
+// =========================================================================
+
+// 1. Fetch All Appointments for Logged-in Doctor
+exports.getDoctorAppointments = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: "Not authorized." });
+
+        const doctor = await Doctor.findOne({ 
+            $or: [ { email: req.user.email }, { userId: req.user._id } ] 
+        });
+
+        if (!doctor) return res.status(404).json({ message: "Doctor profile not found." });
+
+        const appointments = await Appointment.find({ doctorId: doctor._id }).sort({ date: 1, time: 1 });
+
+        const formattedAppointments = appointments.map(app => {
+            let uiStatus = app.status;
+            if (app.status === 'Scheduled') uiStatus = 'Upcoming';
+            if (app.status === 'Waiting') uiStatus = 'Pending';
+
+            return {
+                id: app._id,
+                patientName: app.type === 'pet' ? (app.petName || app.patientName) : app.patientName,
+                type: app.visitType || 'Clinic',
+                age: app.age || 'N/A',
+                gender: app.gender || 'N/A',
+                date: app.date,
+                time: app.time,
+                status: uiStatus,
+                email: "N/A", 
+                phone: app.phone,
+                symptoms: app.symptoms || "Checkup",
+                purpose: app.problem || app.speciality,
+                address: app.address || "N/A",
+                meetingLink: app.meetingLink || "meet.google.com/xyz-demo",
+                token: app.token || `A-${app._id.toString().slice(-3).toUpperCase()}`,
+                room: app.room || doctor.room || "101",
+                img: app.type === 'pet' ? "https://cdn-icons-png.flaticon.com/512/2950/2950648.png" : "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
+            };
+        });
+
+        res.status(200).json(formattedAppointments);
+    } catch (error) {
+        console.error("Fetch Appointments Error:", error);
+        res.status(500).json({ message: "Failed to fetch appointments." });
+    }
+};
+
+// 2. End Consultation & Save Prescription
+exports.completeConsultation = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { vitals, clinicalNotes, medications } = req.body;
+
+        const updatedAppointment = await Appointment.findByIdAndUpdate(
+            id,
+            {
+                status: 'Completed',
+                prescription: { vitals, clinicalNotes, medications }
+            },
+            { new: true }
+        );
+
+        if (!updatedAppointment) return res.status(404).json({ message: "Appointment not found." });
+
+        res.status(200).json({ message: "Consultation ended and Prescription saved!", appointment: updatedAppointment });
+    } catch (error) {
+        console.error("Complete Consultation Error:", error);
+        res.status(500).json({ message: "Failed to save prescription." });
+    }
+};
+
+// 🚨 3. Update Appointment Status (Cancel / Approve) -> YEH MISSING THA! 🚨
+exports.updateAppointmentStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body; 
+
+        const appointment = await Appointment.findByIdAndUpdate(
+            id, 
+            { status: status }, 
+            { new: true }
+        );
+
+        if (!appointment) return res.status(404).json({ message: "Appointment not found." });
+
+        res.status(200).json({ message: "Status updated successfully", status: appointment.status });
+    } catch (error) {
+        console.error("Status Update Error:", error);
+        res.status(500).json({ message: "Failed to update status." });
     }
 };
