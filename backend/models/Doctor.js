@@ -26,7 +26,7 @@ const doctorSchema = mongoose.Schema({
     status: { 
         type: String, 
         // Added 'off duty' to match your frontend toggle logic
-      enum: ['active', 'inactive', 'on-leave', 'available', 'busy', 'break','off duty',],
+      enum: ['active', 'inactive', 'on-leave', 'available', 'busy', 'break','off duty','on duty', 'off duty', 'away', 'busy'],
         default: 'available' 
     },
     // Used as 'nextSlot' in frontend
@@ -76,7 +76,38 @@ const doctorSchema = mongoose.Schema({
         Thursday: [{ id: String, start: String, end: String }],
         Friday: [{ id: String, start: String, end: String }],
         Saturday: [{ id: String, start: String, end: String }]
-    }
+    },
+    firstName: { type: String },
+    lastName: { type: String },
+    gender: { type: String },
+    dob: { type: String },
+    title: { type: String, default: 'Dr.' },
+    category: { type: String, default: 'Human' }, // 'Human' or 'Pet'
+    
+    // Address Object
+    address: {
+        line1: String, line2: String, city: String, state: String, country: String, zip: String
+    },
+    
+    // Pricing Object
+    pricing: {
+        type: { type: String, default: 'custom' },
+        consultationFee: Number, 
+        videoFee: Number, 
+        followUpFee: Number
+    },
+    
+    // Arrays for Dynamic Lists
+    education: [{ id: String, degree: String, college: String, year: String }],
+    experienceList: [{ id: String, hospital: String, from: String, to: String, designation: String }],
+    awards: [{ id: String, name: String, year: String, description: String }],
+    registrations: [{ id: String, registration: String, council: String, year: String }],
+    clinics: [{ id: String, name: String, address: String, img: String }],
+    
+    // Arrays for Tags
+    servicesOffered: [{ type: String }],
+    specializations: [{ type: String }]
+
 
 }, 
 

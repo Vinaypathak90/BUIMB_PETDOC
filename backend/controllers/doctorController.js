@@ -2,6 +2,9 @@ const Doctor = require('../models/Doctor');
 const Transaction = require('../models/Transaction');
 const Appointment = require('../models/Appointment');
 const Patient = require('../models/Patient');
+const User = require('../models/User');
+const bcrypt = require('bcryptjs');
+
 
 // ==========================================
 // 1. GET ALL DOCTORS (For Status Board)
@@ -672,5 +675,158 @@ exports.addPatientRecord = async (req, res) => {
     } catch(err) {
         console.error("Add Record Error:", err);
         res.status(500).json({ message: "Failed to add record." });
+    }
+};
+// =========================================================================
+// ⚙️ SECTION 9: DOCTOR PROFILE SETTINGS
+// =========================================================================
+
+// 1. Fetch Doctor Profile Settings
+exports.getDoctorProfileSettings = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: "Not authorized." });
+
+        const doctor = await Doctor.findOne({ $or: [{ email: req.user.email }, { userId: req.user._id }] });
+        if (!doctor) return res.status(404).json({ message: "Doctor profile not found." });
+
+        res.status(200).json(doctor);
+    } catch (error) {
+        console.error("Fetch Profile Error:", error);
+        res.status(500).json({ message: "Failed to fetch profile settings." });
+    }
+};
+
+// 2. Update Doctor Profile & Password
+exports.updateDoctorProfileSettings = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: "Not authorized." });
+
+        // Frontend se aane wala data destruct karein
+        const { 
+            profile, address, pricing, education, experience, 
+            awards, registrations, clinics, services, specializations,
+            security // Yahan password aayega
+        } = req.body;
+
+        // Generate Full Name
+        const fullName = `${profile.title || 'Dr.'} ${profile.firstName || ''} ${profile.lastName || ''}`.trim();
+
+        const updateData = {
+            name: fullName,
+            firstName: profile.firstName,
+            lastName: profile.lastName,
+            email: profile.email,
+            contact: profile.phone, // mapping to existing schema field
+            gender: profile.gender,
+            dob: profile.dob,
+            category: profile.category,
+            title: profile.title,
+            bio: profile.bio,
+            img: profile.img, 
+            fee: pricing.consultationFee, 
+            address: address,
+            pricing: pricing,
+            education: education,
+            experienceList: experience,
+            awards: awards,
+            registrations: registrations,
+            clinics: clinics,
+            servicesOffered: services,
+            specializations: specializations
+        };
+
+        // Update Doctor Profile
+        const updatedDoctor = await Doctor.findOneAndUpdate(
+            { $or: [{ email: req.user.email }, { userId: req.user._id }] },
+            { $set: updateData },
+            { new: true }
+        );
+
+        if (!updatedDoctor) return res.status(404).json({ message: "Doctor not found." });
+
+        // 🚨 UPDATE USER MODEL (Name, Email & Password) 🚨
+        let userUpdate = { 
+            name: fullName,
+            email: profile.email 
+        };
+        
+        // Agar naya password aaya hai, toh usko encrypt (hash) karke update karein
+        if (security && security.newPass) {
+            const salt = await bcrypt.genSalt(10);
+            userUpdate.password = await bcrypt.hash(security.newPass, salt);
+        }
+
+        await User.findOneAndUpdate(
+            { _id: req.user._id }, 
+            { $set: userUpdate }
+        );
+
+        res.status(200).json({ message: "Profile & Security updated successfully!", doctor: updatedDoctor });
+    } catch (error) {
+        console.error("Update Profile Error:", error);
+        res.status(500).json({ message: "Failed to update profile." });
+    }
+};
+
+// 1. Sidebar ke liye Doctor ka basic data fetch karna
+exports.getSidebarProfile = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: "Not authorized." });
+
+        // userId se doctor dhoondo
+        const doctor = await Doctor.findOne({ userId: req.user._id });
+
+        if (!doctor) return res.status(404).json({ message: "Doctor not found." });
+
+        // Wahi fields bhejo jo sidebar ko chahiye
+        res.status(200).json({
+            name: doctor.name,
+            img: doctor.img,
+            qualification: doctor.qualification || "Specialist",
+            status: doctor.status || "off duty"
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Server error." });
+    }
+};
+
+// 2. Doctor ki availability toggle karna (Available / Offline)
+// Toggle Doctor Availability Status
+exports.toggleAvailability = async (req, res) => {
+    try {
+        // Log 1: Check if user is coming from protect middleware
+        console.log("Toggle Status Request received for User ID:", req.user?._id);
+
+        if (!req.user) {
+            return res.status(401).json({ message: "Not authorized. No user found in request." });
+        }
+
+        // Log 2: Try to find doctor
+        const doctor = await Doctor.findOne({ userId: req.user._id });
+        console.log("Doctor found in DB:", doctor ? doctor.name : "NOT FOUND");
+
+        if (!doctor) {
+            return res.status(404).json({ message: "Doctor profile not found for this user." });
+        }
+
+        // Toggle logic
+        const oldStatus = doctor.status;
+        doctor.status = (doctor.status === 'on duty' ? 'off duty' : 'on duty');
+        doctor.isOnline = (doctor.status === 'on duty');
+
+        // Log 3: Before saving
+        console.log(`Toggling status from ${oldStatus} to ${doctor.status}`);
+
+        await doctor.save();
+
+        res.status(200).json({ 
+            status: doctor.status, 
+            isOnline: doctor.isOnline 
+        });
+
+    } catch (error) {
+        // 🚨 Yeh log aapko VS Code terminal mein asli error batayega
+        console.error("CRITICAL ERROR IN TOGGLE STATUS:", error.message);
+        res.status(500).json({ message: "Server Error", error: error.message });
     }
 };

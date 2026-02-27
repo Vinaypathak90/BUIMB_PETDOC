@@ -48,5 +48,11 @@ router.post('/invoices', protect, doctorController.createDoctorInvoice);
 
 router.get('/schedule', protect, doctorController.getDoctorSchedule);
 router.put('/schedule', protect, doctorController.updateDoctorSchedule); 
+router.get('/settings/profile', protect, doctorController.getDoctorProfileSettings);
+router.put('/settings/profile', protect, doctorController.updateDoctorProfileSettings);
+
+// Sidebar Routes
+router.get('/sidebar-profile', protect, doctorController.getSidebarProfile);
+router.patch('/toggle-status', protect, doctorController.toggleAvailability);
 
 module.exports = router;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import DoctorSidebar from '../../components/doctor/DoctorSidebar'; 
 import { 
   Menu, Bell, Save, UploadCloud, User, MapPin, 
@@ -14,92 +14,158 @@ const DoctorProfileSettings = () => {
   const [showToast, setShowToast] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
 
   // --- 1. COMPLEX STATE MANAGEMENT ---
 
   // Basic Info
   const [profile, setProfile] = useState({
-    firstName: "Edalin", lastName: "Hendry",
-    email: "edalin@petdoc.com", phone: "+1 823-901-2345",
-    gender: "Male", dob: "1985-04-12",
-    category: "Human", // 'Human' or 'Pet'
-    title: "Dr.",
-    bio: "Experienced Surgeon with a demonstrated history of working in the medical practice industry. Skilled in Dentistry, Oral Surgery, and Medical Education.",
-    img: "https://randomuser.me/api/portraits/men/85.jpg"
+    firstName: "", lastName: "", email: "", phone: "", gender: "Male", dob: "", category: "Human", title: "Dr.", bio: "", img: ""
   });
 
   // Contact & Location
-  const [address, setAddress] = useState({
-    line1: "350 Willow Lane", line2: "Suite 402",
-    city: "New York", state: "NY", country: "USA", zip: "10012"
-  });
+  const [address, setAddress] = useState({ line1: "", line2: "", city: "", state: "", country: "", zip: "" });
 
   // Pricing
-  const [pricing, setPricing] = useState({
-    type: "custom", // 'free' or 'custom'
-    consultationFee: 500,
-    videoFee: 350,
-    followUpFee: 200
-  });
+  const [pricing, setPricing] = useState({ type: "custom", consultationFee: 0, videoFee: 0, followUpFee: 0 });
 
-  // Dynamic Lists (The LinkedIn Part)
-  const [education, setEducation] = useState([
-    { id: 1, degree: "BDS", college: "American Dental Medical University", year: "2003" },
-    { id: 2, degree: "MDS", college: "American Dental Medical University", year: "2005" }
-  ]);
-
-  const [experience, setExperience] = useState([
-    { id: 1, hospital: "Glowing Smiles Family Dental", from: "2010", to: "Present", designation: "Senior Surgeon" },
-    { id: 2, hospital: "Comfort Care Dental Clinic", from: "2007", to: "2010", designation: "Junior Doctor" }
-  ]);
-
-  const [awards, setAwards] = useState([
-    { id: 1, name: "Humanitarian Award", year: "2008", description: "For service in rural areas" }
-  ]);
-
-  const [registrations, setRegistrations] = useState([
-    { id: 1, registration: "A-45312", council: "American Dental Council", year: "2006" }
-  ]);
-
-  const [memberships, setMemberships] = useState([
-    { id: 1, name: "American Dental Association" }
-  ]);
-
-  const [clinics, setClinics] = useState([
-    { id: 1, name: "Sofi's Clinic", address: "85 Green St, London", img: null }
-  ]);
+  // Dynamic Lists
+  const [education, setEducation] = useState([]);
+  const [experience, setExperience] = useState([]);
+  const [awards, setAwards] = useState([]);
+  const [registrations, setRegistrations] = useState([]);
+  const [memberships, setMemberships] = useState([]);
+  const [clinics, setClinics] = useState([]);
 
   // Tags & AI Suggestions
-  const [services, setServices] = useState(["Tooth cleaning", "Implants", "Root Canal"]);
-  const [specializations, setSpecializations] = useState(["Dentist", "Oral Surgery"]);
+  const [services, setServices] = useState([]);
+  const [specializations, setSpecializations] = useState([]);
   const [tagInput, setTagInput] = useState("");
   const [aiSuggestions, setAiSuggestions] = useState([]);
 
-  // Social & Security
-  const [socials, setSocials] = useState({ website: "", facebook: "", twitter: "", linkedin: "" });
+  // Security 
   const [security, setSecurity] = useState({ 
-    currentPass: "", newPass: "", confirmPass: "", twoFactor: true,
+    newPass: "", confirmPass: "",
     loginHistory: [
-        { device: "Chrome - Windows", date: "Today at 10:45 AM", location: "New York, USA", active: true },
-        { device: "Safari - iPhone 14", date: "Yesterday at 08:30 PM", location: "New York, USA", active: false }
+        { device: "Chrome - Windows", date: "Today at 10:45 AM", location: "New York, USA", active: true }
     ]
   });
 
-  // --- LOGIC & HANDLERS ---
-
-  const handleSave = () => {
-    setLoading(true);
-    // Simulation of API delay
-    setTimeout(() => {
-        setLoading(false);
-        setShowToast(true);
-        setTimeout(() => setShowToast(false), 3000);
-    }, 1500);
+  // 🧠 SMART TOKEN HELPER
+  const getToken = () => {
+    let token = "";
+    try {
+        const uToken = JSON.parse(localStorage.getItem('user_token'));
+        const uInfo = JSON.parse(localStorage.getItem('userInfo'));
+        const uRaw = localStorage.getItem('token');
+        if (uToken?.token) token = uToken.token;
+        else if (uInfo?.token) token = uInfo.token;
+        else if (uRaw && !uRaw.startsWith('{')) token = uRaw;
+    } catch (e) {}
+    return token;
   };
 
+  // --- 2. FETCH EXISTING DATA FROM BACKEND ---
+  useEffect(() => {
+      const fetchProfileData = async () => {
+          try {
+              const token = getToken();
+              if (!token) return;
+
+              const res = await fetch('http://localhost:5000/api/doctor/settings/profile', {
+                  headers: { 'Authorization': `Bearer ${token}` }
+              });
+
+              if (res.ok) {
+                  const data = await res.json();
+                  
+                  // Map Backend DB to Frontend States
+                  setProfile({
+                      firstName: data.firstName || "",
+                      lastName: data.lastName || "",
+                      email: data.email || "",
+                      phone: data.contact || "",
+                      gender: data.gender || "Male",
+                      dob: data.dob || "",
+                      category: data.category || "Human",
+                      title: data.title || "Dr.",
+                      bio: data.bio || "",
+                      img: data.img || "https://randomuser.me/api/portraits/men/85.jpg"
+                  });
+
+                  if (data.address) setAddress(data.address);
+                  if (data.pricing) setPricing(data.pricing);
+                  if (data.education) setEducation(data.education);
+                  if (data.experienceList) setExperience(data.experienceList);
+                  if (data.awards) setAwards(data.awards);
+                  if (data.registrations) setRegistrations(data.registrations);
+                  if (data.clinics) setClinics(data.clinics);
+                  if (data.servicesOffered) setServices(data.servicesOffered);
+                  if (data.specializations) setSpecializations(data.specializations);
+
+                  setIsDataLoaded(true);
+              }
+          } catch (error) {
+              console.error("Fetch Profile Error:", error);
+          }
+      };
+      fetchProfileData();
+  }, []);
+
+  // --- 3. SAVE DATA TO BACKEND ---
+  const handleSave = async () => {
+    // Password Validation
+    if (security.newPass || security.confirmPass) {
+        if (security.newPass !== security.confirmPass) {
+            alert("New Password and Confirm Password do not match!");
+            setActiveTab('security');
+            return;
+        }
+        if (security.newPass.length < 6) {
+            alert("Password must be at least 6 characters long.");
+            setActiveTab('security');
+            return;
+        }
+    }
+
+    setLoading(true);
+    try {
+        const token = getToken();
+        const payload = {
+            profile, address, pricing, education, experience, 
+            awards, registrations, clinics, services, specializations,
+            security: { newPass: security.newPass } // Send only new password if provided
+        };
+
+        const res = await fetch('http://localhost:5000/api/doctor/settings/profile', {
+            method: 'PUT',
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            setSecurity({ ...security, newPass: "", confirmPass: "" }); // Clear password fields after save
+            setShowToast(true);
+            setTimeout(() => setShowToast(false), 3000);
+        } else {
+            alert("Failed to update profile.");
+        }
+    } catch (error) {
+        console.error("Save Error:", error);
+        alert("Server error occurred.");
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  // --- LOGIC & HANDLERS ---
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      if (file.size > 2 * 1024 * 1024) return alert("File size must be under 2MB");
       const reader = new FileReader();
       reader.onloadend = () => setProfile({ ...profile, img: reader.result });
       reader.readAsDataURL(file);
@@ -107,7 +173,7 @@ const DoctorProfileSettings = () => {
   };
 
   // Dynamic Row Generic Handlers
-  const addRow = (setter, template) => setter(prev => [...prev, { ...template, id: Date.now() }]);
+  const addRow = (setter, template) => setter(prev => [...prev, { ...template, id: Date.now().toString() }]);
   const removeRow = (setter, id) => setter(prev => prev.filter(item => item.id !== id));
   const handleRowChange = (setter, id, field, value) => {
     setter(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
@@ -119,7 +185,6 @@ const DoctorProfileSettings = () => {
     const lowerInput = tagInput.toLowerCase();
     let suggestions = [];
     
-    // Logic switches based on Category (Pet vs Human)
     if(profile.category === 'Pet') {
         if (lowerInput.includes('dog') || lowerInput.includes('surg')) suggestions = ["Canine Surgery", "Pet Dermatology", "Vaccination"];
         else if (lowerInput.includes('groom')) suggestions = ["Pet Grooming", "Nail Trimming"];
@@ -140,19 +205,20 @@ const DoctorProfileSettings = () => {
   const calculateStrength = () => {
     let score = 0;
     if (profile.firstName && profile.lastName) score += 10;
-    if (profile.bio.length > 20) score += 10;
+    if (profile.bio?.length > 20) score += 10;
     if (address.city) score += 10;
     if (education.length > 0) score += 15;
     if (experience.length > 0) score += 15;
     if (registrations.length > 0) score += 10;
     if (services.length > 0) score += 10;
-    if (socials.linkedin) score += 10;
     if (pricing.consultationFee) score += 10;
     return Math.min(score, 100);
   };
 
+  if (!isDataLoaded) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-500 bg-[#f8f9fa]">Loading Settings...</div>;
+
   return (
-    <div className="bg-[#f8f9fa] min-h-screen relative font-sans">
+    <div className="bg-[#f8f9fa] min-h-screen relative font-sans pb-20">
       
       {/* Toast Notification */}
       {showToast && (
@@ -180,8 +246,8 @@ const DoctorProfileSettings = () => {
             </div>
             <div className="flex items-center gap-4">
                 <div className="hidden md:flex flex-col items-end">
-                    <span className="text-xs text-slate-400 font-bold uppercase">Last Saved</span>
-                    <span className="text-xs font-bold text-slate-700">Today, 10:45 AM</span>
+                    <span className="text-xs text-slate-400 font-bold uppercase">Status</span>
+                    <span className="text-xs font-bold text-emerald-500 flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"></div> Online</span>
                 </div>
                 <button className="p-2 text-slate-500 hover:bg-slate-100 rounded-full relative"><Bell size={20} /></button>
             </div>
@@ -268,19 +334,17 @@ const DoctorProfileSettings = () => {
                                         Upload New
                                         <input type="file" className="hidden" onChange={handleImageChange} accept="image/*"/>
                                     </label>
-                                    <button onClick={() => setProfile({...profile, img: null})} className="bg-white border border-slate-200 text-red-500 px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-50">Delete</button>
+                                    <button onClick={() => setProfile({...profile, img: ""})} className="bg-white border border-slate-200 text-red-500 px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-50">Delete</button>
                                 </div>
                             </div>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                             <div>
-                                <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Username / Title</label>
+                                <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Title / First Name</label>
                                 <div className="flex gap-2">
-                                    <select className="p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none w-24">
-                                        <option>Dr.</option>
-                                        <option>Mr.</option>
-                                        <option>Ms.</option>
+                                    <select value={profile.title} onChange={(e) => setProfile({...profile, title: e.target.value})} className="p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none w-24 bg-white">
+                                        <option>Dr.</option><option>Mr.</option><option>Ms.</option>
                                     </select>
                                     <input type="text" value={profile.firstName} onChange={(e) => setProfile({...profile, firstName: e.target.value})} className="flex-1 p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
                                 </div>
@@ -299,17 +363,13 @@ const DoctorProfileSettings = () => {
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Gender</label>
-                                <select className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1] bg-white">
+                                <select value={profile.gender} onChange={(e) => setProfile({...profile, gender: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1] bg-white">
                                     <option>Male</option><option>Female</option><option>Other</option>
                                 </select>
                             </div>
                             <div>
-                                <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Specialist Category (AI Trigger)</label>
-                                <select 
-                                    value={profile.category} 
-                                    onChange={(e) => setProfile({...profile, category: e.target.value})} 
-                                    className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1] bg-white"
-                                >
+                                <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Specialist Category</label>
+                                <select value={profile.category} onChange={(e) => setProfile({...profile, category: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1] bg-white">
                                     <option value="Human">Human Specialist</option>
                                     <option value="Pet">Veterinarian (Pet Specialist)</option>
                                 </select>
@@ -321,23 +381,23 @@ const DoctorProfileSettings = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                             <div className="md:col-span-2">
                                 <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Address Line 1</label>
-                                <input type="text" value={address.line1} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
+                                <input type="text" value={address.line1} onChange={(e) => setAddress({...address, line1: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">City</label>
-                                <input type="text" value={address.city} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
+                                <input type="text" value={address.city} onChange={(e) => setAddress({...address, city: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">State / Province</label>
-                                <input type="text" value={address.state} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
+                                <input type="text" value={address.state} onChange={(e) => setAddress({...address, state: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Country</label>
-                                <input type="text" value={address.country} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
+                                <input type="text" value={address.country} onChange={(e) => setAddress({...address, country: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
                             </div>
                             <div>
                                 <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">Postal Code</label>
-                                <input type="text" value={address.zip} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
+                                <input type="text" value={address.zip} onChange={(e) => setAddress({...address, zip: e.target.value})} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
                             </div>
                         </div>
 
@@ -395,7 +455,17 @@ const DoctorProfileSettings = () => {
                                     </span>
                                 ))}
                             </div>
-                            <input type="text" placeholder="Press enter to add..." className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-[#00d0f1]" onKeyDown={(e) => e.key === 'Enter' && addTag(e.target.value, setSpecializations, specializations)}/>
+                            <input 
+                                type="text" 
+                                placeholder="Press enter to add..." 
+                                className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-[#00d0f1]" 
+                                onKeyDown={(e) => {
+                                    if(e.key === 'Enter' && e.target.value) {
+                                        addTag(e.target.value, setSpecializations, specializations);
+                                        e.target.value = '';
+                                    }
+                                }}
+                            />
                         </div>
                     </div>
                 )}
@@ -409,21 +479,21 @@ const DoctorProfileSettings = () => {
                                 <div className="p-4 border border-slate-200 rounded-2xl hover:border-[#00d0f1] transition-all">
                                     <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Consultation Fee</label>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-lg font-bold text-slate-400">$</span>
+                                        <span className="text-lg font-bold text-slate-400">₹</span>
                                         <input type="number" value={pricing.consultationFee} onChange={(e) => setPricing({...pricing, consultationFee: e.target.value})} className="w-full font-black text-xl text-slate-800 outline-none"/>
                                     </div>
                                 </div>
                                 <div className="p-4 border border-slate-200 rounded-2xl hover:border-[#00d0f1] transition-all">
                                     <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Video Consult</label>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-lg font-bold text-slate-400">$</span>
+                                        <span className="text-lg font-bold text-slate-400">₹</span>
                                         <input type="number" value={pricing.videoFee} onChange={(e) => setPricing({...pricing, videoFee: e.target.value})} className="w-full font-black text-xl text-slate-800 outline-none"/>
                                     </div>
                                 </div>
                                 <div className="p-4 border border-slate-200 rounded-2xl hover:border-[#00d0f1] transition-all">
                                     <label className="text-xs font-bold text-slate-400 uppercase mb-2 block">Follow-up</label>
                                     <div className="flex items-center gap-2">
-                                        <span className="text-lg font-bold text-slate-400">$</span>
+                                        <span className="text-lg font-bold text-slate-400">₹</span>
                                         <input type="number" value={pricing.followUpFee} onChange={(e) => setPricing({...pricing, followUpFee: e.target.value})} className="w-full font-black text-xl text-slate-800 outline-none"/>
                                     </div>
                                 </div>
@@ -433,24 +503,20 @@ const DoctorProfileSettings = () => {
                         <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm">
                             <div className="flex justify-between items-center mb-6">
                                 <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Building className="text-[#00d0f1]"/> Clinic Info</h3>
-                                <button className="text-sm font-bold text-[#00d0f1]">+ Add Clinic</button>
+                                <button onClick={() => addRow(setClinics, {name: "", address: ""})} className="text-sm font-bold text-[#00d0f1]">+ Add Clinic</button>
                             </div>
                             
-                            {clinics.map((clinic, index) => (
-                                <div key={clinic.id} className="mb-6 p-4 bg-slate-50 rounded-2xl border border-slate-200">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            {clinics.map((clinic) => (
+                                <div key={clinic.id} className="mb-6 p-4 bg-slate-50 rounded-2xl border border-slate-200 relative group">
+                                    <button onClick={() => removeRow(setClinics, clinic.id)} className="absolute top-2 right-2 text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={16}/></button>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 mt-2">
                                         <div>
                                             <label className="text-[10px] font-bold text-slate-400 uppercase">Clinic Name</label>
-                                            <input type="text" value={clinic.name} className="w-full p-2 bg-transparent border-b border-slate-300 font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
+                                            <input type="text" value={clinic.name} onChange={(e) => handleRowChange(setClinics, clinic.id, 'name', e.target.value)} className="w-full p-2 bg-transparent border-b border-slate-300 font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
                                         </div>
                                         <div>
                                             <label className="text-[10px] font-bold text-slate-400 uppercase">Address</label>
-                                            <input type="text" value={clinic.address} className="w-full p-2 bg-transparent border-b border-slate-300 font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <div className="w-20 h-20 bg-slate-200 rounded-xl flex items-center justify-center cursor-pointer hover:bg-slate-300 transition-colors">
-                                            <UploadCloud size={20} className="text-slate-500"/>
+                                            <input type="text" value={clinic.address} onChange={(e) => handleRowChange(setClinics, clinic.id, 'address', e.target.value)} className="w-full p-2 bg-transparent border-b border-slate-300 font-bold text-slate-700 outline-none focus:border-[#00d0f1]" />
                                         </div>
                                     </div>
                                 </div>
@@ -468,10 +534,10 @@ const DoctorProfileSettings = () => {
                             <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><GraduationCap className="text-[#00d0f1]"/> Education</h3>
                             {education.map((edu) => (
                                 <div key={edu.id} className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 pb-4 border-b border-slate-50">
-                                    <div><label className="text-[10px] uppercase font-bold text-slate-400">Degree</label><input type="text" value={edu.degree} onChange={(e) => handleRowChange(setEducation, edu.id, 'degree', e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold outline-none" /></div>
-                                    <div><label className="text-[10px] uppercase font-bold text-slate-400">College</label><input type="text" value={edu.college} onChange={(e) => handleRowChange(setEducation, edu.id, 'college', e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium outline-none" /></div>
+                                    <div><label className="text-[10px] uppercase font-bold text-slate-400">Degree</label><input type="text" value={edu.degree} onChange={(e) => handleRowChange(setEducation, edu.id, 'degree', e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#00d0f1]" /></div>
+                                    <div><label className="text-[10px] uppercase font-bold text-slate-400">College</label><input type="text" value={edu.college} onChange={(e) => handleRowChange(setEducation, edu.id, 'college', e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-[#00d0f1]" /></div>
                                     <div className="flex gap-2 items-end">
-                                        <div className="flex-1"><label className="text-[10px] uppercase font-bold text-slate-400">Year</label><input type="text" value={edu.year} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium outline-none" /></div>
+                                        <div className="flex-1"><label className="text-[10px] uppercase font-bold text-slate-400">Year</label><input type="text" value={edu.year} onChange={(e) => handleRowChange(setEducation, edu.id, 'year', e.target.value)} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-[#00d0f1]" /></div>
                                         <button onClick={() => removeRow(setEducation, edu.id)} className="p-3 bg-red-50 text-red-500 rounded-xl mb-[2px]"><Trash2 size={18}/></button>
                                     </div>
                                 </div>
@@ -484,11 +550,11 @@ const DoctorProfileSettings = () => {
                             <h3 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2"><Briefcase className="text-[#00d0f1]"/> Work Experience</h3>
                             {experience.map((exp) => (
                                 <div key={exp.id} className="grid grid-cols-1 md:grid-cols-7 gap-4 mb-4 pb-4 border-b border-slate-50">
-                                    <div className="md:col-span-3"><input type="text" value={exp.hospital} placeholder="Hospital" className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold outline-none" /></div>
-                                    <div className="md:col-span-2"><input type="text" value={exp.designation} placeholder="Designation" className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium outline-none" /></div>
-                                    <div className="md:col-span-1"><input type="text" value={exp.from} placeholder="From" className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium outline-none" /></div>
+                                    <div className="md:col-span-3"><input type="text" value={exp.hospital} onChange={(e) => handleRowChange(setExperience, exp.id, 'hospital', e.target.value)} placeholder="Hospital" className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#00d0f1]" /></div>
+                                    <div className="md:col-span-2"><input type="text" value={exp.designation} onChange={(e) => handleRowChange(setExperience, exp.id, 'designation', e.target.value)} placeholder="Designation" className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-[#00d0f1]" /></div>
+                                    <div className="md:col-span-1"><input type="text" value={exp.from} onChange={(e) => handleRowChange(setExperience, exp.id, 'from', e.target.value)} placeholder="From Year" className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-[#00d0f1]" /></div>
                                     <div className="md:col-span-1 flex gap-2 items-end">
-                                        <input type="text" value={exp.to} placeholder="To" className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium outline-none" />
+                                        <input type="text" value={exp.to} onChange={(e) => handleRowChange(setExperience, exp.id, 'to', e.target.value)} placeholder="To" className="w-full p-3 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-[#00d0f1]" />
                                         <button onClick={() => removeRow(setExperience, exp.id)} className="p-3 bg-red-50 text-red-500 rounded-xl mb-[2px]"><Trash2 size={18}/></button>
                                     </div>
                                 </div>
@@ -502,8 +568,8 @@ const DoctorProfileSettings = () => {
                                 <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><FileText size={18} className="text-[#00d0f1]"/> Registrations</h3>
                                 {registrations.map((reg) => (
                                     <div key={reg.id} className="flex gap-2 mb-3">
-                                        <input type="text" value={reg.registration} placeholder="Reg No." className="w-1/3 p-2 border border-slate-200 rounded-lg text-sm font-bold outline-none" />
-                                        <input type="text" value={reg.council} placeholder="Council" className="flex-1 p-2 border border-slate-200 rounded-lg text-sm outline-none" />
+                                        <input type="text" value={reg.registration} onChange={(e) => handleRowChange(setRegistrations, reg.id, 'registration', e.target.value)} placeholder="Reg No." className="w-1/3 p-2 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:border-[#00d0f1]" />
+                                        <input type="text" value={reg.council} onChange={(e) => handleRowChange(setRegistrations, reg.id, 'council', e.target.value)} placeholder="Council" className="flex-1 p-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-[#00d0f1]" />
                                         <button onClick={() => removeRow(setRegistrations, reg.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button>
                                     </div>
                                 ))}
@@ -514,8 +580,8 @@ const DoctorProfileSettings = () => {
                                 <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Award size={18} className="text-[#00d0f1]"/> Awards</h3>
                                 {awards.map((award) => (
                                     <div key={award.id} className="flex gap-2 mb-3">
-                                        <input type="text" value={award.name} placeholder="Award Name" className="flex-1 p-2 border border-slate-200 rounded-lg text-sm font-bold outline-none" />
-                                        <input type="text" value={award.year} placeholder="Year" className="w-20 p-2 border border-slate-200 rounded-lg text-sm outline-none" />
+                                        <input type="text" value={award.name} onChange={(e) => handleRowChange(setAwards, award.id, 'name', e.target.value)} placeholder="Award Name" className="flex-1 p-2 border border-slate-200 rounded-lg text-sm font-bold outline-none focus:border-[#00d0f1]" />
+                                        <input type="text" value={award.year} onChange={(e) => handleRowChange(setAwards, award.id, 'year', e.target.value)} placeholder="Year" className="w-20 p-2 border border-slate-200 rounded-lg text-sm outline-none focus:border-[#00d0f1]" />
                                         <button onClick={() => removeRow(setAwards, award.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16}/></button>
                                     </div>
                                 ))}
@@ -537,13 +603,23 @@ const DoctorProfileSettings = () => {
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">New Password</label>
                                     <div className="relative">
-                                        <input type={showPassword ? "text" : "password"} className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold outline-none" />
+                                        <input 
+                                            type={showPassword ? "text" : "password"} 
+                                            value={security.newPass}
+                                            onChange={(e) => setSecurity({...security, newPass: e.target.value})}
+                                            className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#00d0f1]" 
+                                        />
                                         <button onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-slate-400">{showPassword ? <EyeOff size={16}/> : <Eye size={16}/>}</button>
                                     </div>
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-bold text-slate-400 uppercase mb-1 block">Confirm Password</label>
-                                    <input type="password" className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold outline-none" />
+                                    <input 
+                                        type="password" 
+                                        value={security.confirmPass}
+                                        onChange={(e) => setSecurity({...security, confirmPass: e.target.value})}
+                                        className="w-full p-3 border border-slate-200 rounded-xl text-sm font-bold outline-none focus:border-[#00d0f1]" 
+                                    />
                                 </div>
                             </div>
                         </div>
@@ -574,14 +650,14 @@ const DoctorProfileSettings = () => {
                 )}
 
                 {/* Footer Save Button (Fixed at bottom right) */}
-                <div className="flex justify-end pt-6 pb-12">
+                <div className="fixed bottom-0 right-0 w-full lg:w-[calc(100%-16rem)] bg-white/80 backdrop-blur-md border-t border-slate-200 p-4 flex justify-end z-40 pr-8">
                     <button 
                         onClick={handleSave} 
                         disabled={loading}
-                        className={`bg-[#192a56] text-white px-10 py-4 rounded-xl font-bold text-sm flex items-center gap-2 shadow-xl transition-all transform hover:scale-105 active:scale-95 ${loading ? 'opacity-70 cursor-wait' : ''}`}
+                        className={`bg-[#192a56] text-white px-10 py-3.5 rounded-xl font-black text-sm flex items-center gap-2 shadow-xl transition-all transform hover:scale-105 active:scale-95 ${loading ? 'opacity-70 cursor-wait' : 'hover:bg-blue-900'}`}
                     >
                         {loading ? <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></span> : <Save size={18} />}
-                        Save Changes
+                        Save All Changes
                     </button>
                 </div>
 
