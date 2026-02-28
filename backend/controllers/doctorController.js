@@ -131,92 +131,148 @@ exports.addDoctor = async (req, res) => {
 // =========================================================================
 
 // 1. Fetch All Invoices for the Logged-in Doctor
+
 exports.getDoctorInvoices = async (req, res) => {
     try {
+        // 1. Auth Check & Safe ID
         if (!req.user) return res.status(401).json({ message: "Not authorized." });
 
+        const tokenUserId = req.user._id || req.user.id;
+        if (!tokenUserId) return res.status(400).json({ message: "Invalid Token: User ID missing." });
+
+        // 2. Doctor Profile Find (Safe Search)
         const doctor = await Doctor.findOne({ 
-            $or: [ { email: req.user.email }, { userId: req.user._id } ] 
+            $or: [ 
+                { email: req.user.email }, 
+                { userId: tokenUserId },
+                { userId: tokenUserId?.toString() }
+            ] 
         });
 
         if (!doctor) return res.status(404).json({ message: "Doctor profile not found." });
 
-        // Sirf is doctor ki transactions fetch karni hain jisme patient se paisa aaya ho
+        // 3. 🚨 ROBUST SEARCH: Naam ya ID dono se match karega (Sirf Income/Credit)
         const transactions = await Transaction.find({ 
-            doctorName: doctor.name, // Mapping via doctor name based on your schema
-            flow: 'credit'           // Only income
+            $or: [
+                { doctorName: doctor.name },
+                { doctorId: doctor._id },
+                { doctorId: doctor._id.toString() }
+            ],
+            flow: 'credit' // Only income
         }).sort({ createdAt: -1 });
 
-        // Frontend format mein map karna
-        const formattedInvoices = transactions.map(t => ({
-            _id: t._id,
-            id: t.invoiceId,
-            patient: t.name, // In your schema 'name' is the patient's name
-            date: new Date(t.date || t.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-            amount: t.amount,
-            status: t.status,
-            method: t.method || "Cash",
-            // Transaction model mein items nahi hain, toh hum service name use kar rahe hain
-            items: [{ desc: t.service || t.type, cost: t.amount, qty: 1 }], 
-            tax: 0,
-            img: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
-        }));
+        console.log(`✅ ${transactions.length} invoices found for Dr. ${doctor.name}`);
+
+        // 4. Frontend format mein map karna (Safe Fallbacks ke sath)
+        const formattedInvoices = transactions.map(t => {
+            // Safe Date Formatting
+            let validDate = "N/A";
+            try {
+                if (t.date || t.createdAt) {
+                    validDate = new Date(t.date || t.createdAt).toLocaleDateString('en-GB', { 
+                        day: 'numeric', month: 'short', year: 'numeric' 
+                    });
+                }
+            } catch (e) {
+                console.error("Date parsing error for invoice:", t._id);
+            }
+
+            const patientName = t.name || "Unknown Patient";
+
+            return {
+                _id: t._id,
+                id: t.invoiceId || `INV-${t._id.toString().slice(-6).toUpperCase()}`, // Safe ID fallback
+                patient: patientName, 
+                date: validDate,
+                amount: t.amount || 0,
+                status: t.status || "Pending",
+                method: t.method || "Cash",
+                items: [{ desc: t.service || t.type || "Consultation", cost: t.amount || 0, qty: 1 }], 
+                tax: 0,
+                // Name ke hisaab se dynamic Avatar generate karega
+                img: `https://ui-avatars.com/api/?name=${encodeURIComponent(patientName)}&background=random&color=fff`
+            };
+        });
 
         res.status(200).json(formattedInvoices);
+
     } catch (error) {
-        console.error("Fetch Invoices Error:", error);
-        res.status(500).json({ message: "Failed to fetch invoices." });
+        console.error("Fetch Invoices Critical Error:", error.message);
+        res.status(500).json({ message: "Failed to fetch invoices.", error: error.message });
     }
 };
 
 // 2. Create a New Invoice (Generates a Transaction)
 exports.createDoctorInvoice = async (req, res) => {
     try {
+        // 1. Auth Check & Safe ID
         if (!req.user) return res.status(401).json({ message: "Not authorized." });
 
+        const tokenUserId = req.user._id || req.user.id;
+        const tokenEmail = req.user.email;
+
+        if (!tokenUserId) return res.status(400).json({ message: "Invalid Token: User ID missing." });
+
+        // 2. Doctor Profile Find (Safe Search)
         const doctor = await Doctor.findOne({ 
-            $or: [ { email: req.user.email }, { userId: req.user._id } ] 
+            $or: [ 
+                { userId: tokenUserId }, 
+                { userId: tokenUserId?.toString() },
+                { email: tokenEmail } 
+            ] 
         });
 
         if (!doctor) return res.status(404).json({ message: "Doctor profile not found." });
 
-        const { patientName, items, status, totalAmount } = req.body;
+        // 3. 🚨 SAFE DESTRUCTURING: Agar frontend se data miss ho jaye toh server crash na ho
+        const { patientName = "Walk-in Patient", items = [], status = "Pending", totalAmount = 0 } = req.body;
 
+        // 4. Naya Invoice (Transaction) Create Karein
         const newTransaction = new Transaction({
-            user: req.user._id,
-            invoiceId: `INV-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 100)}`,
+            user: tokenUserId,
+            doctorId: doctor._id, // Future queries ko fast aur secure banane ke liye (if schema supports)
+            invoiceId: `INV-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 1000)}`,
             name: patientName,
             doctorName: doctor.name,
             type: "Consultation",
-            service: items.length > 0 ? items[0].desc : "General Checkup",
+            // 🚨 SAFE ARRAY CHECK 🚨
+            service: (items && items.length > 0) ? items[0].desc : "General Checkup",
             amount: totalAmount,
             flow: "credit",
-            status: status || "Pending",
+            status: status,
             method: "Cash", // Default, can be updated later
             date: new Date(),  
         });
 
         await newTransaction.save();
 
+        console.log(`✅ Invoice ${newTransaction.invoiceId} created successfully for Dr. ${doctor.name}`);
+
+        // 5. Frontend Format mein Map karna
         res.status(201).json({ 
-            message: "Invoice created successfully.", 
+            message: "Invoice created successfully. ✅", 
             invoice: {
+                _id: newTransaction._id,
                 id: newTransaction.invoiceId,
                 patient: newTransaction.name,
-                date: new Date(newTransaction.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+                date: new Date(newTransaction.date).toLocaleDateString('en-IN', { 
+                    day: 'numeric', month: 'short', year: 'numeric' 
+                }),
                 amount: newTransaction.amount,
                 status: newTransaction.status,
                 items: items,
                 tax: 0,
-                img: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
+                // Static image ki jagah dynamic aur professional Name Avatar
+                img: `https://ui-avatars.com/api/?name=${encodeURIComponent(newTransaction.name)}&background=random&color=fff`
             }
         });
 
     } catch (error) {
-        console.error("Create Invoice Error:", error);
-        res.status(500).json({ message: "Failed to create invoice." });
+        console.error("Create Invoice Critical Error:", error.message);
+        res.status(500).json({ message: "Failed to create invoice.", error: error.message });
     }
 };
+
 // =========================================================================
 // ⏱️ SECTION 7: DOCTOR SCHEDULE & TIMINGS
 // =========================================================================
@@ -226,50 +282,103 @@ exports.getDoctorSchedule = async (req, res) => {
     try {
         if (!req.user) return res.status(401).json({ message: "Not authorized." });
 
+        // 🚨 SAFE ID EXTRACTION (Crash protection)
+        const tokenUserId = req.user._id || req.user.id;
+        const tokenEmail = req.user.email;
+
+        if (!tokenUserId) {
+            return res.status(400).json({ message: "Invalid Token: User ID missing." });
+        }
+
+        // 1. Doctor Profile dhoondo (Safe & Flexible Search)
+        // Schedule aur slotDuration ko specifically select kar rahe hain
         const doctor = await Doctor.findOne({ 
-            $or: [ { email: req.user.email }, { userId: req.user._id } ] 
-        }).select('schedule slotDuration');
+            $or: [
+                { userId: tokenUserId }, 
+                { userId: tokenUserId.toString() },
+                { email: tokenEmail }
+            ] 
+        }).select('schedule slotDuration name');
 
-        if (!doctor) return res.status(404).json({ message: "Doctor profile not found." });
+        if (!doctor) {
+            console.log("❌ Schedule Fetch: Doctor profile NOT FOUND.");
+            return res.status(404).json({ message: "Doctor profile not found." });
+        }
 
-        // Agar schedule null hai toh default structure bhejenge
+        // 2. Default Structure (Security layer taaki frontend crash na ho)
         const defaultSchedule = {
-            Sunday: [], Monday: [], Tuesday: [], Wednesday: [], Thursday: [], Friday: [], Saturday: []
+            Sunday: [], Monday: [], Tuesday: [], Wednesday: [], 
+            Thursday: [], Friday: [], Saturday: []
         };
 
+        console.log(`✅ Schedule fetched for: ${doctor.name}`);
+
+        // 3. Response bhej rahe hain
         res.status(200).json({
-            slotDuration: doctor.slotDuration || 30,
+            slotDuration: doctor.slotDuration || 30, // Default 30 mins
             schedule: doctor.schedule || defaultSchedule
         });
+
     } catch (error) {
-        console.error("Fetch Schedule Error:", error);
-        res.status(500).json({ message: "Failed to fetch schedule." });
+        console.error("Fetch Schedule Safe Error:", error.message);
+        res.status(500).json({ message: "Failed to fetch schedule.", error: error.message });
     }
 };
+
 
 // 2. Update Doctor's Schedule
 exports.updateDoctorSchedule = async (req, res) => {
     try {
         if (!req.user) return res.status(401).json({ message: "Not authorized." });
 
+        // 🚨 SAFE ID EXTRACTION (Crash protection)
+        const tokenUserId = req.user._id || req.user.id;
+        const tokenEmail = req.user.email;
+
+        if (!tokenUserId) {
+            return res.status(400).json({ message: "Invalid Token: User ID missing." });
+        }
+
+        // 1. Body se data nikalo (Defaults set kar diye hain)
         const { schedule, slotDuration } = req.body;
 
+        console.log(`Updating schedule for User ID: ${tokenUserId}`);
+
+        // 2. Doctor ko dhoondo aur UPDATE karo (Flexible Search)
         const doctor = await Doctor.findOneAndUpdate(
-            { $or: [ { email: req.user.email }, { userId: req.user._id } ] },
-            { schedule, slotDuration },
-            { new: true }
-        ).select('schedule slotDuration');
+            { 
+                $or: [ 
+                    { userId: tokenUserId }, 
+                    { userId: tokenUserId.toString() },
+                    { email: tokenEmail } 
+                ] 
+            },
+            { 
+                $set: { 
+                    schedule: schedule, 
+                    slotDuration: slotDuration || 30 // Fallback to 30 mins
+                } 
+            },
+            { new: true, runValidators: true } // Validators ensure data integrity
+        ).select('schedule slotDuration name');
 
-        if (!doctor) return res.status(404).json({ message: "Doctor profile not found." });
+        if (!doctor) {
+            console.log("❌ Update Schedule: Doctor profile NOT FOUND.");
+            return res.status(404).json({ message: "Doctor profile not found." });
+        }
 
+        console.log(`✅ Schedule updated successfully for Dr. ${doctor.name}`);
+
+        // 3. Response bhej rahe hain
         res.status(200).json({ 
-            message: "Schedule updated successfully!",
+            message: "Schedule updated successfully! 🗓️",
             slotDuration: doctor.slotDuration,
             schedule: doctor.schedule
         });
+
     } catch (error) {
-        console.error("Update Schedule Error:", error);
-        res.status(500).json({ message: "Failed to update schedule." });
+        console.error("Update Schedule Safe Error:", error.message);
+        res.status(500).json({ message: "Failed to update schedule.", error: error.message });
     }
 };
 // =========================================================================
@@ -281,44 +390,93 @@ exports.getSpecialties = async (req, res) => {
     try {
         if (!req.user) return res.status(401).json({ message: "Not authorized." });
 
+        // 🚨 SAFE ID EXTRACTION (Crash protection)
+        const tokenUserId = req.user._id || req.user.id;
+        const tokenEmail = req.user.email;
+
+        if (!tokenUserId) {
+            return res.status(400).json({ message: "Invalid Token: User ID missing." });
+        }
+
+        // 1. Doctor Profile dhoondo (Flexible Search)
+        // Hum 'specialties' aur 'speciality' dono select kar rahe hain backup ke liye
         const doctor = await Doctor.findOne({ 
-            $or: [ { email: req.user.email }, { userId: req.user._id } ] 
-        }).select('specialties');
+            $or: [
+                { userId: tokenUserId }, 
+                { userId: tokenUserId.toString() },
+                { email: tokenEmail }
+            ] 
+        }).select('specialties speciality name');
 
-        if (!doctor) return res.status(404).json({ message: "Doctor not found." });
+        if (!doctor) {
+            console.log("❌ Specialties Fetch: Doctor profile NOT FOUND.");
+            return res.status(404).json({ message: "Doctor profile not found." });
+        }
 
-        // Agar empty hai toh empty array bhejo
-        res.status(200).json(doctor.specialties || []);
+        console.log(`✅ Fetching specialties for: ${doctor.name}`);
+
+        // 2. Data Fallback Logic
+        // Agar 'specialties' array khali hai par 'speciality' field me kuch hai, toh wo bhej do
+        const specialtiesList = doctor.specialties || (doctor.speciality ? [doctor.speciality] : []);
+
+        res.status(200).json(specialtiesList);
+
     } catch (error) {
-        console.error("Fetch Specialties Error:", error);
-        res.status(500).json({ message: "Failed to fetch specialties." });
+        console.error("Fetch Specialties Safe Error:", error.message);
+        res.status(500).json({ message: "Failed to fetch specialties.", error: error.message });
     }
 };
 
+
 // 2. Update/Save Doctor's Specialties & Services
+
 exports.updateSpecialties = async (req, res) => {
     try {
         if (!req.user) return res.status(401).json({ message: "Not authorized." });
 
-        const { specialties } = req.body; // Frontend se pura array aayega
+        // 🚨 SAFE ID EXTRACTION (Crash protection)
+        const tokenUserId = req.user._id || req.user.id;
+        const tokenEmail = req.user.email;
 
+        if (!tokenUserId) {
+            return res.status(400).json({ message: "Invalid Token: User ID missing." });
+        }
+
+        const { specialties } = req.body; // Frontend se array aayega
+
+        console.log(`Updating specialties for User ID: ${tokenUserId}`);
+
+        // 🚨 ROBUST UPDATE: Object ID, String ID, aur Email teeno fallback ke saath
         const updatedDoctor = await Doctor.findOneAndUpdate(
-            { $or: [ { email: req.user.email }, { userId: req.user._id } ] },
-            { specialties: specialties },
-            { new: true } 
-        ).select('specialties');
+            { 
+                $or: [ 
+                    { userId: tokenUserId }, 
+                    { userId: tokenUserId.toString() },
+                    { email: tokenEmail } 
+                ] 
+            },
+            { $set: { specialties: specialties || [] } }, // Array safety
+            { new: true, runValidators: true } 
+        ).select('specialties name');
 
-        if (!updatedDoctor) return res.status(404).json({ message: "Doctor not found." });
+        if (!updatedDoctor) {
+            console.log("❌ Update Specialties: Doctor profile NOT FOUND.");
+            return res.status(404).json({ message: "Doctor profile not found." });
+        }
+
+        console.log(`✅ Specialties saved for: ${updatedDoctor.name}`);
 
         res.status(200).json({ 
-            message: "Specialties saved successfully!", 
+            message: "Specialties saved successfully! ✅", 
             specialties: updatedDoctor.specialties 
         });
+
     } catch (error) {
-        console.error("Save Specialties Error:", error);
-        res.status(500).json({ message: "Failed to save specialties." });
+        console.error("Save Specialties Safe Error:", error.message);
+        res.status(500).json({ message: "Failed to save specialties.", error: error.message });
     }
 };
+
 // =========================================================================
 // 🩺 SECTION 8: DOCTOR APPOINTMENTS & CONSULTATION
 // =========================================================================
@@ -326,48 +484,89 @@ exports.updateSpecialties = async (req, res) => {
 // 1. Fetch All Appointments for Logged-in Doctor
 exports.getDoctorAppointments = async (req, res) => {
     try {
-        if (!req.user) return res.status(401).json({ message: "Not authorized." });
+        if (!req.user) return res.status(401).json({ message: "Not authorized. Token missing." });
 
+        const tokenUserId = req.user._id || req.user.id;
+        const tokenEmail = req.user.email;
+
+        // 2. Doctor Profile Find
         const doctor = await Doctor.findOne({ 
-            $or: [ { email: req.user.email }, { userId: req.user._id } ] 
+            $or: [ 
+                { userId: tokenUserId }, 
+                { userId: tokenUserId?.toString() },
+                { email: tokenEmail } 
+            ] 
         });
 
-        if (!doctor) return res.status(404).json({ message: "Doctor profile not found." });
+        if (!doctor) {
+            console.log("❌ Appointments Fetch Error: Doctor profile not found.");
+            return res.status(404).json({ message: "Doctor profile not found." });
+        }
 
-        const appointments = await Appointment.find({ doctorId: doctor._id }).sort({ date: 1, time: 1 });
+        // 3. Search Query
+        const appointments = await Appointment.find({ 
+            $or: [
+                { doctorId: doctor._id }, 
+                { doctorId: doctor._id.toString() },
+                { doctorName: doctor.name } 
+            ]
+        }).sort({ date: 1, time: 1 });
 
+        console.log(`✅ Success: ${appointments.length} appointments fetched for Dr. ${doctor.name}`);
+
+        // 4. 🚨 FORMATTING DATA (YEH PART FIX KIYA HAI) 🚨
         const formattedAppointments = appointments.map(app => {
-            let uiStatus = app.status;
-            if (app.status === 'Scheduled') uiStatus = 'Upcoming';
-            if (app.status === 'Waiting') uiStatus = 'Pending';
+            
+            // Backend Status ko Frontend Tabs ke sath Match karna
+            let rawStatus = app.status || "Pending";
+            let uiStatus = 'Upcoming'; // Default value sabko upcoming me daalegi
+
+            // Sirf Completed aur Cancelled ko alag karenge, baaki sab 'Upcoming' ban jayenge
+            if (['Completed', 'Done', 'Finished'].includes(rawStatus)) {
+                uiStatus = 'Completed';
+            } else if (['Cancelled', 'Rejected', 'Failed'].includes(rawStatus)) {
+                uiStatus = 'Cancelled';
+            } else {
+                // 'Approved', 'With Doctor', 'Waiting', 'Pending', 'Scheduled' sab 'Upcoming' me dikhenge
+                uiStatus = 'Upcoming';
+            }
+
+            // Safe Patient Name
+            const finalPatientName = app.type === 'pet' ? (app.petName || app.patientName) : (app.patientName || "Unknown Patient");
 
             return {
                 id: app._id,
-                patientName: app.type === 'pet' ? (app.petName || app.patientName) : app.patientName,
-                type: app.visitType || 'Clinic',
+                patientName: finalPatientName,
+                type: app.visitType || app.type || 'Clinic',
                 age: app.age || 'N/A',
                 gender: app.gender || 'N/A',
-                date: app.date,
-                time: app.time,
-                status: uiStatus,
-                email: "N/A", 
-                phone: app.phone,
-                symptoms: app.symptoms || "Checkup",
-                purpose: app.problem || app.speciality,
+                date: app.date || "N/A",
+                time: app.time || "N/A",
+                status: uiStatus, // 🚨 Yahan ab clean status jayega
+                originalStatus: rawStatus, // Agar frontend me exact status dikhana ho (jaise "With Doctor")
+                email: app.email || "N/A", 
+                phone: app.phone || "N/A",
+                symptoms: app.problem || app.symptoms || "General Checkup",
+                purpose: app.problem || app.speciality || "Consultation",
                 address: app.address || "N/A",
                 meetingLink: app.meetingLink || "meet.google.com/xyz-demo",
                 token: app.token || `A-${app._id.toString().slice(-3).toUpperCase()}`,
                 room: app.room || doctor.room || "101",
-                img: app.type === 'pet' ? "https://cdn-icons-png.flaticon.com/512/2950/2950648.png" : "https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
+                img: app.type === 'pet' 
+                    ? "https://cdn-icons-png.flaticon.com/512/2950/2950648.png" 
+                    : `https://ui-avatars.com/api/?name=${encodeURIComponent(finalPatientName)}&background=random&color=fff`
             };
         });
 
+        // 5. Send back to frontend
         res.status(200).json(formattedAppointments);
+
     } catch (error) {
-        console.error("Fetch Appointments Error:", error);
-        res.status(500).json({ message: "Failed to fetch appointments." });
+        console.error("Fetch Appointments Critical Error:", error);
+        res.status(500).json({ message: "Failed to fetch appointments.", error: error.message });
     }
 };
+
 
 // 2. End Consultation & Save Prescription
 exports.completeConsultation = async (req, res) => {
@@ -375,21 +574,62 @@ exports.completeConsultation = async (req, res) => {
         const { id } = req.params;
         const { vitals, clinicalNotes, medications } = req.body;
 
-        const updatedAppointment = await Appointment.findByIdAndUpdate(
-            id,
+        // 1. Auth Check & Safe ID Extraction (Crash se bachne ke liye)
+        if (!req.user) return res.status(401).json({ message: "Not authorized. Token missing." });
+        
+        const tokenUserId = req.user._id || req.user.id;
+        if (!tokenUserId) {
+            return res.status(400).json({ message: "Invalid Token: User ID missing." });
+        }
+
+        // 2. Doctor ki Profile dhoondo (Safe Search)
+        const doctor = await Doctor.findOne({ 
+            $or: [
+                { userId: tokenUserId }, 
+                { userId: tokenUserId?.toString() },
+                { email: req.user.email }
+            ] 
+        });
+
+        if (!doctor) {
+            console.log("❌ Consultation Error: Doctor profile not found.");
+            return res.status(404).json({ message: "Doctor profile not found." });
+        }
+
+        // 3. 🚨 SECURE UPDATE: Ensure appointment belongs to THIS exact doctor 🚨
+        const updatedAppointment = await Appointment.findOneAndUpdate(
+            { _id: id, doctorId: doctor._id }, // Strict check: Dono match hone chahiye
             {
-                status: 'Completed',
-                prescription: { vitals, clinicalNotes, medications }
+                $set: {
+                    status: 'Completed',
+                    prescription: { 
+                        vitals: vitals || {}, 
+                        clinicalNotes: clinicalNotes || "", 
+                        medications: medications || [],
+                        completedAt: new Date() // Record the exact time of completion
+                    }
+                }
             },
             { new: true }
         );
 
-        if (!updatedAppointment) return res.status(404).json({ message: "Appointment not found." });
+        if (!updatedAppointment) {
+            console.log(`⚠️ Unauthorized attempt or missing appointment ID: ${id}`);
+            return res.status(404).json({ 
+                message: "Appointment not found or you are not authorized to complete this." 
+            });
+        }
 
-        res.status(200).json({ message: "Consultation ended and Prescription saved!", appointment: updatedAppointment });
+        console.log(`✅ Consultation completed successfully for Appointment ID: ${id}`);
+
+        res.status(200).json({ 
+            message: "Consultation ended and Prescription saved! ✅", 
+            appointment: updatedAppointment 
+        });
+
     } catch (error) {
-        console.error("Complete Consultation Error:", error);
-        res.status(500).json({ message: "Failed to save prescription." });
+        console.error("Complete Consultation Critical Error:", error.message);
+        res.status(500).json({ message: "Failed to save prescription.", error: error.message });
     }
 };
 
@@ -399,22 +639,55 @@ exports.updateAppointmentStatus = async (req, res) => {
         const { id } = req.params;
         const { status } = req.body; 
 
-        const appointment = await Appointment.findByIdAndUpdate(
-            id, 
-            { status: status }, 
-            { new: true }
+        // 1. Auth Check & Safe ID Extraction
+        if (!req.user) return res.status(401).json({ message: "Not authorized. Token missing." });
+        
+        const tokenUserId = req.user._id || req.user.id;
+        if (!tokenUserId) {
+            return res.status(400).json({ message: "Invalid Token: User ID missing." });
+        }
+
+        // 2. Doctor ki Profile dhoondo (Safe Search)
+        const doctor = await Doctor.findOne({ 
+            $or: [
+                { userId: tokenUserId }, 
+                { userId: tokenUserId?.toString() },
+                { email: req.user.email }
+            ] 
+        });
+
+        if (!doctor) {
+            console.log("❌ Status Update Error: Doctor profile not found.");
+            return res.status(404).json({ message: "Doctor profile not found." });
+        }
+
+        // 3. 🚨 SECURE UPDATE: Ensure appointment belongs to THIS doctor 🚨
+        const appointment = await Appointment.findOneAndUpdate(
+            { _id: id, doctorId: doctor._id }, // Strict Security Check
+            { $set: { status: status } }, 
+            { new: true, runValidators: true } // Ensure valid status values from Schema
         );
 
-        if (!appointment) return res.status(404).json({ message: "Appointment not found." });
+        if (!appointment) {
+            console.log(`⚠️ Unauthorized status update attempt for Appointment ID: ${id}`);
+            return res.status(404).json({ 
+                message: "Appointment not found or you are not authorized to update this." 
+            });
+        }
 
-        res.status(200).json({ message: "Status updated successfully", status: appointment.status });
+        console.log(`✅ Appointment status updated to '${status}' successfully.`);
+
+        // 4. Clean Frontend Response
+        res.status(200).json({ 
+            message: `Appointment ${status} successfully! ✅`, 
+            status: appointment.status 
+        });
+
     } catch (error) {
-        console.error("Status Update Error:", error);
-        res.status(500).json({ message: "Failed to update status." });
+        console.error("Status Update Critical Error:", error.message);
+        res.status(500).json({ message: "Failed to update status.", error: error.message });
     }
 };
-
-
 // =========================================================================
 // 🟡 SECTION 3: PATIENT MANAGEMENT (MY PATIENTS)
 // =========================================================================
@@ -424,51 +697,70 @@ exports.getDoctorPatients = async (req, res) => {
     try {
         if (!req.user) return res.status(401).json({ message: "Not authorized." });
 
-        const doctor = await Doctor.findOne({ $or: [ { email: req.user.email }, { userId: req.user._id } ] });
+        // 🚨 SAFE ID EXTRACTION
+        const tokenUserId = req.user._id || req.user.id;
+        const tokenEmail = req.user.email;
+
+        if (!tokenUserId) {
+            return res.status(400).json({ message: "Invalid Token: User ID missing." });
+        }
+
+        // 1. Doctor Profile dhoondo (Email ya ID fallback ke saath)
+        const doctor = await Doctor.findOne({ 
+            $or: [
+                { userId: tokenUserId }, 
+                { userId: tokenUserId.toString() },
+                { email: tokenEmail }
+            ] 
+        });
+
         if (!doctor) return res.status(404).json({ message: "Doctor not found." });
 
-        // Fetch Doctor's Data
-        const doctorAppointments = await Appointment.find({ doctorId: doctor._id }).sort({ createdAt: -1 });
-        const doctorTransactions = await Transaction.find({ doctorName: doctor.name }).sort({ createdAt: -1 });
-        const manualPatients = await Patient.find().sort({ createdAt: -1 });
+        // 2. Fetch Data Parallelly (Performance improvement)
+        const [doctorAppointments, doctorTransactions, manualPatients] = await Promise.all([
+            Appointment.find({ doctorId: doctor._id }).sort({ date: -1, time: -1 }),
+            Transaction.find({ doctorName: doctor.name }).sort({ createdAt: -1 }),
+            Patient.find().sort({ createdAt: -1 })
+        ]);
 
-        // Use a Map to ensure unique patients (Key: Phone number or Name)
         const patientMap = new Map();
 
         // Step A: Load Manually Added Patients
         manualPatients.forEach(p => {
             patientMap.set(p.phone || p.name, {
-                id: p.patientId, // Custom ID like PT1234
-                _id: p._id,      // MongoDB ID
+                id: p.patientId || `PT-${p._id.toString().slice(-4).toUpperCase()}`, 
+                _id: p._id,
                 name: p.name,
                 age: p.age || "N/A",
                 gender: p.gender || "N/A",
-                bloodGroup: "O+", 
-                phone: p.phone,
-                email: "N/A",
-                location: p.address || "Unknown Location",
+                bloodGroup: p.bloodGroup || "Unknown", 
+                phone: p.phone || "N/A",
+                email: p.email || "N/A",
+                location: p.address || "Clinic Visit",
                 img: p.img || `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=random&color=fff`,
                 status: p.status === 'active' ? 'Active' : 'Inactive',
                 isManual: true,
-                records: p.records || [] // External records saved manually
+                records: p.records || []
             });
         });
 
-        // Step B: Load Patients from Appointments (Who are not in manual list)
+        // Step B: Load Patients from Appointments (Unique only)
         doctorAppointments.forEach(app => {
             const key = app.phone || app.patientName;
             if (!patientMap.has(key)) {
                 patientMap.set(key, {
-                    id: `APT-${app._id.toString().slice(-5).toUpperCase()}`, // Auto ID for UI
+                    id: `APT-${app._id.toString().slice(-5).toUpperCase()}`,
                     _id: app._id,
                     name: app.type === 'pet' ? (app.petName || app.patientName) : app.patientName,
                     age: app.age || "N/A",
                     gender: app.gender || "N/A",
                     bloodGroup: "Unknown",
                     phone: app.phone || "N/A",
-                    email: "N/A",
-                    location: app.address || "Unknown Location",
-                    img: app.type === 'pet' ? "https://cdn-icons-png.flaticon.com/512/2950/2950648.png" : `https://ui-avatars.com/api/?name=${encodeURIComponent(app.patientName)}&background=random&color=fff`,
+                    email: app.email || "N/A",
+                    location: app.address || "Online/Clinic",
+                    img: app.type === 'pet' 
+                        ? "https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=100&q=80" 
+                        : `https://ui-avatars.com/api/?name=${encodeURIComponent(app.patientName)}&background=random&color=fff`,
                     status: 'Active',
                     isManual: false,
                     records: []
@@ -476,51 +768,49 @@ exports.getDoctorPatients = async (req, res) => {
             }
         });
 
-        // Step C: Process each unique patient (Attach History, Vitals, Bills, Records)
+        // Step C: Process each unique patient (Attach History, Vitals, Bills)
         const formattedPatients = Array.from(patientMap.values()).map(p => {
-            
-            // 1. History
             const patHistory = doctorAppointments.filter(app => app.phone === p.phone || app.patientName === p.name);
+            
+            // Map History
             const mappedHistory = patHistory.map(app => ({
                 id: app._id,
-                date: app.date,
+                date: app.date ? new Date(app.date).toISOString().split('T')[0] : "N/A",
                 time: app.time,
-                purpose: app.problem || app.speciality || "Consultation",
+                purpose: app.problem || "Consultation",
                 type: app.visitType || app.type || "Clinic",
                 status: app.status,
-                fee: app.fee
+                fee: app.fee || doctor.fee || 0
             }));
 
-            // 2. Vitals (From the latest completed appointment)
-            const completedApps = patHistory.filter(a => a.status === 'Completed' && a.prescription && a.prescription.vitals);
-            let latestVitals = { bp: "-", heartRate: "-", glucose: "-", temp: "-" };
-            
-            if (completedApps.length > 0) {
-                const latest = completedApps[0].prescription.vitals; // latest first
-                latestVitals = { bp: latest.bp || "-", heartRate: latest.pulse || "-", glucose: "-", temp: latest.temp || "-" };
-            }
+            // Extract Latest Vitals
+            const latestCompleted = patHistory.find(a => a.status === 'Completed' && a.prescription?.vitals);
+            const latestVitals = latestCompleted ? {
+                bp: latestCompleted.prescription.vitals.bp || "-",
+                heartRate: latestCompleted.prescription.vitals.pulse || "-",
+                glucose: latestCompleted.prescription.vitals.glucose || "-",
+                temp: latestCompleted.prescription.vitals.temp || "-"
+            } : { bp: "-", heartRate: "-", glucose: "-", temp: "-" };
 
-            // 3. Bills
+            // Map Bills
             const bills = doctorTransactions.filter(b => b.name === p.name || b.phone === p.phone);
             const mappedBills = bills.map(b => ({
-                id: b.invoiceId,
-                date: new Date(b.date || b.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
+                id: b.invoiceId || b._id.toString().slice(-6).toUpperCase(),
+                date: new Date(b.date || b.createdAt).toLocaleDateString('en-IN'),
                 amount: b.amount,
                 status: b.status
             }));
             const totalPaid = bills.filter(b => b.status === 'Paid').reduce((acc, curr) => acc + curr.amount, 0) || 0;
 
-            // 4. Records (Merge Manual Records with Completed Appointment Prescriptions)
-            const autoRecords = completedApps.map(app => ({
+            // Merge Auto Prescriptions into Records
+            const autoRecords = patHistory.filter(a => a.status === 'Completed').map(app => ({
                 id: app._id,
                 date: app.date,
-                title: `Prescription: ${app.problem || 'Checkup'}`,
+                title: `Prescription: ${app.problem || 'Visit'}`,
                 type: "Rx",
                 doctor: doctor.name,
-                details: app.prescription // This allows UI to show full Rx details
+                details: app.prescription
             }));
-
-            const allRecords = [...(p.records || []), ...autoRecords];
 
             return {
                 ...p,
@@ -529,20 +819,20 @@ exports.getDoctorPatients = async (req, res) => {
                 vitals: latestVitals,
                 history: mappedHistory,
                 bills: mappedBills,
-                records: allRecords
+                records: [...(p.records || []), ...autoRecords]
             };
         });
 
-        // Sort latest active patients first
+        // Latest visits first
         formattedPatients.sort((a, b) => new Date(b.lastVisit) - new Date(a.lastVisit));
 
         res.status(200).json(formattedPatients);
+
     } catch (error) {
-        console.error("Fetch Patients Error:", error);
+        console.error("Fetch Patients Error:", error.message);
         res.status(500).json({ message: "Failed to fetch patients.", error: error.message });
     }
 };
-
 // 2. Add a new Patient Manually by Doctor
 exports.addDoctorPatient = async (req, res) => {
     try {
@@ -686,37 +976,75 @@ exports.getDoctorProfileSettings = async (req, res) => {
     try {
         if (!req.user) return res.status(401).json({ message: "Not authorized." });
 
-        const doctor = await Doctor.findOne({ $or: [{ email: req.user.email }, { userId: req.user._id }] });
-        if (!doctor) return res.status(404).json({ message: "Doctor profile not found." });
+        // 🚨 SAFE ID EXTRACTION (Crash protection)
+        const tokenUserId = req.user._id || req.user.id;
+        const tokenEmail = req.user.email;
 
+        if (!tokenUserId) {
+            return res.status(400).json({ message: "Invalid Token: User ID missing." });
+        }
+
+        console.log(`Fetching Profile Settings for User ID: ${tokenUserId}`);
+
+        // 🚨 ROBUST SEARCH: Object ID, String ID, aur Email teeno fallback ke saath
+        const doctor = await Doctor.findOne({ 
+            $or: [
+                { userId: tokenUserId }, 
+                { userId: tokenUserId.toString() },
+                { email: tokenEmail }
+            ] 
+        });
+
+        if (!doctor) {
+            console.log("❌ Fetch Profile Settings: Doctor profile NOT FOUND.");
+            return res.status(404).json({ message: "Doctor profile not found." });
+        }
+
+        console.log(`✅ Profile settings fetched for: ${doctor.name}`);
+
+        // Pura doctor object bhej rahe hain taaki frontend form pre-fill ho jaye
         res.status(200).json(doctor);
+
     } catch (error) {
-        console.error("Fetch Profile Error:", error);
-        res.status(500).json({ message: "Failed to fetch profile settings." });
+        console.error("Fetch Profile Safe Error:", error.message);
+        res.status(500).json({ message: "Failed to fetch profile settings.", error: error.message });
     }
 };
 
 // 2. Update Doctor Profile & Password
+
+
 exports.updateDoctorProfileSettings = async (req, res) => {
     try {
         if (!req.user) return res.status(401).json({ message: "Not authorized." });
 
-        // Frontend se aane wala data destruct karein
+        // 1. SAFE ID EXTRACTION (Crash protection)
+        const tokenUserId = req.user._id || req.user.id;
+        const tokenEmail = req.user.email;
+
+        if (!tokenUserId) {
+            return res.status(400).json({ message: "Invalid Token: User ID missing." });
+        }
+
+        // 2. Safe Destructuring (Agar frontend koi data na bheje, toh error na aaye)
         const { 
-            profile, address, pricing, education, experience, 
-            awards, registrations, clinics, services, specializations,
-            security // Yahan password aayega
+            profile = {}, address = {}, pricing = {}, education = [], experience = [], 
+            awards = [], registrations = [], clinics = [], services = [], specializations = [],
+            security = {} 
         } = req.body;
 
-        // Generate Full Name
+        // Generate Full Name Safely
         const fullName = `${profile.title || 'Dr.'} ${profile.firstName || ''} ${profile.lastName || ''}`.trim();
 
+        console.log(`Updating Profile for User ID: ${tokenUserId}`);
+
+        // 3. Mapping data exactly as per your schema
         const updateData = {
             name: fullName,
             firstName: profile.firstName,
             lastName: profile.lastName,
             email: profile.email,
-            contact: profile.phone, // mapping to existing schema field
+            contact: profile.phone, 
             gender: profile.gender,
             dob: profile.dob,
             category: profile.category,
@@ -735,36 +1063,53 @@ exports.updateDoctorProfileSettings = async (req, res) => {
             specializations: specializations
         };
 
-        // Update Doctor Profile
+        // 4. Update Doctor Profile (Robust Search)
         const updatedDoctor = await Doctor.findOneAndUpdate(
-            { $or: [{ email: req.user.email }, { userId: req.user._id }] },
+            { 
+                $or: [ 
+                    { userId: tokenUserId }, 
+                    { userId: tokenUserId.toString() },
+                    { email: tokenEmail } 
+                ] 
+            },
             { $set: updateData },
-            { new: true }
+            { new: true, runValidators: true }
         );
 
-        if (!updatedDoctor) return res.status(404).json({ message: "Doctor not found." });
+        if (!updatedDoctor) {
+            console.log("❌ Update Profile: Doctor NOT FOUND in Doctor Collection.");
+            return res.status(404).json({ message: "Doctor profile not found." });
+        }
 
-        // 🚨 UPDATE USER MODEL (Name, Email & Password) 🚨
+        // 5. 🚨 UPDATE USER MODEL (Name, Email & Password) 🚨
         let userUpdate = { 
             name: fullName,
             email: profile.email 
         };
         
         // Agar naya password aaya hai, toh usko encrypt (hash) karke update karein
-        if (security && security.newPass) {
+        if (security.newPass) {
+            const bcrypt = require('bcrypt'); // Make sure bcrypt or bcryptjs is installed
             const salt = await bcrypt.genSalt(10);
             userUpdate.password = await bcrypt.hash(security.newPass, salt);
+            console.log("🔒 Password updated successfully.");
         }
 
         await User.findOneAndUpdate(
-            { _id: req.user._id }, 
+            { _id: tokenUserId }, 
             { $set: userUpdate }
         );
 
-        res.status(200).json({ message: "Profile & Security updated successfully!", doctor: updatedDoctor });
+        console.log(`✅ Profile & Security updated for: ${fullName}`);
+
+        res.status(200).json({ 
+            message: "Profile & Security updated successfully! ✅", 
+            doctor: updatedDoctor 
+        });
+
     } catch (error) {
-        console.error("Update Profile Error:", error);
-        res.status(500).json({ message: "Failed to update profile." });
+        console.error("Update Profile Safe Error:", error.message);
+        res.status(500).json({ message: "Failed to update profile.", error: error.message });
     }
 };
 
@@ -773,19 +1118,42 @@ exports.getSidebarProfile = async (req, res) => {
     try {
         if (!req.user) return res.status(401).json({ message: "Not authorized." });
 
-        // userId se doctor dhoondo
-        const doctor = await Doctor.findOne({ userId: req.user._id });
+        // 🚨 SAFE CHECK: Agar _id nahi hai to id use karo
+        const tokenUserId = req.user._id || req.user.id || req.user.userId;
+        const tokenEmail = req.user.email;
 
-        if (!doctor) return res.status(404).json({ message: "Doctor not found." });
+        console.log("Safe Token ID Extracted:", tokenUserId);
 
-        // Wahi fields bhejo jo sidebar ko chahiye
+        // Agar Token me koi ID hi nahi hai to crash se bacho
+        if (!tokenUserId) {
+            return res.status(400).json({ message: "Token is invalid, ID missing" });
+        }
+
+        const queryConditions = [
+            { userId: tokenUserId },
+            { userId: tokenUserId.toString() }
+        ];
+
+        // Agar token mein email hai, tabhi usko condition mein dalo
+        if (tokenEmail) {
+            queryConditions.push({ email: tokenEmail });
+        }
+
+        const doctor = await Doctor.findOne({ $or: queryConditions });
+
+        if (!doctor) {
+            return res.status(404).json({ message: "Doctor profile not found in DB." });
+        }
+
         res.status(200).json({
             name: doctor.name,
             img: doctor.img,
-            qualification: doctor.qualification || "Specialist",
+            qualification: doctor.qualification || doctor.speciality || "Specialist",
             status: doctor.status || "off duty"
         });
+        
     } catch (error) {
+        console.error("Sidebar Fetch Error:", error);
         res.status(500).json({ message: "Server error." });
     }
 };
@@ -794,38 +1162,51 @@ exports.getSidebarProfile = async (req, res) => {
 // Toggle Doctor Availability Status
 exports.toggleAvailability = async (req, res) => {
     try {
-        // Log 1: Check if user is coming from protect middleware
-        console.log("Toggle Status Request received for User ID:", req.user?._id);
+        // 1. Safe ID Extraction (Jaise Dashboard aur Sidebar me kiya)
+        const tokenUserId = req.user?._id || req.user?.id;
+        const tokenEmail = req.user?.email;
 
-        if (!req.user) {
-            return res.status(401).json({ message: "Not authorized. No user found in request." });
+        console.log("Toggle Request - ID:", tokenUserId, "Email:", tokenEmail);
+
+        if (!tokenUserId) {
+            return res.status(401).json({ message: "Not authorized. Token User ID missing." });
         }
 
-        // Log 2: Try to find doctor
-        const doctor = await Doctor.findOne({ userId: req.user._id });
-        console.log("Doctor found in DB:", doctor ? doctor.name : "NOT FOUND");
+        // 2. Doctor ko dhoondo (Flexible Search)
+        const doctor = await Doctor.findOne({ 
+            $or: [
+                { userId: tokenUserId }, 
+                { userId: tokenUserId.toString() },
+                { email: tokenEmail }
+            ] 
+        });
 
         if (!doctor) {
+            console.log("❌ Doctor profile NOT FOUND for toggle.");
             return res.status(404).json({ message: "Doctor profile not found for this user." });
         }
 
-        // Toggle logic
-        const oldStatus = doctor.status;
-        doctor.status = (doctor.status === 'on duty' ? 'off duty' : 'on duty');
+        // 3. Toggle Logic (Strict check with fallback)
+        // Agar status 'active' ya kuch aur hai, to usko 'off duty' se start karo
+        const currentStatus = doctor.status === 'on duty' ? 'on duty' : 'off duty';
+        
+        doctor.status = (currentStatus === 'on duty' ? 'off duty' : 'on duty');
         doctor.isOnline = (doctor.status === 'on duty');
 
-        // Log 3: Before saving
-        console.log(`Toggling status from ${oldStatus} to ${doctor.status}`);
+        console.log(`✅ Toggling status from ${currentStatus} to ${doctor.status}`);
+
+        // 4. Update Task (Optional: Clean UI feel ke liye)
+        doctor.currentTask = doctor.status === 'on duty' ? "Available for Consult" : "Offline";
 
         await doctor.save();
 
         res.status(200).json({ 
             status: doctor.status, 
-            isOnline: doctor.isOnline 
+            isOnline: doctor.isOnline,
+            message: `You are now ${doctor.status}`
         });
 
     } catch (error) {
-        // 🚨 Yeh log aapko VS Code terminal mein asli error batayega
         console.error("CRITICAL ERROR IN TOGGLE STATUS:", error.message);
         res.status(500).json({ message: "Server Error", error: error.message });
     }
@@ -841,29 +1222,49 @@ exports.getDoctorDashboard = async (req, res) => {
     try {
         if (!req.user) return res.status(401).json({ message: "Not authorized." });
 
-        const doctor = await Doctor.findOne({ $or: [{ email: req.user.email }, { userId: req.user._id }] });
-        if (!doctor) return res.status(404).json({ message: "Doctor not found." });
+        // 🚨 SAFE ID EXTRACTION: Undefined se bachne ke liye
+        const tokenUserId = req.user._id || req.user.id;
+        const tokenEmail = req.user.email;
 
-        // 1. Fetch Appointments for this doctor
-        const appointments = await Appointment.find({ doctorId: doctor._id }).sort({ date: 1, time: 1 });
+        if (!tokenUserId) {
+            return res.status(400).json({ message: "Invalid Token: User ID missing." });
+        }
 
-        // 2. Fetch total unique patients count (from Appointment collection & Patient collection)
-        // Combine them to get a unique patient count
-        const uniquePatientsFromApps = [...new Set(appointments.map(a => a.phone || a.patientName))];
-        const manualPatientsCount = await Patient.countDocuments(); // Assume all manual belong to clinic
-        const totalPatients = uniquePatientsFromApps.length + manualPatientsCount;
-
-        // 3. Calculate Stats
-        const upcomingAppointments = appointments.filter(a => a.status === 'Upcoming' || a.status === 'Pending').length;
-        
-        // Calculate Revenue (Completed/Approved appointments * doctor's fee)
-        const revenueAppointments = appointments.filter(a => a.status === 'Completed' || a.status === 'Approved');
-        let totalRevenue = 0;
-        revenueAppointments.forEach(app => {
-            totalRevenue += (app.fee || doctor.fee || 0); // fallback to doctor's default fee
+        // 1. Doctor Profile dhoondo (Email ya ID dono se check karega)
+        const doctor = await Doctor.findOne({ 
+            $or: [
+                { userId: tokenUserId }, 
+                { userId: tokenUserId.toString() },
+                { email: tokenEmail }
+            ] 
         });
 
-        // 4. Format appointments for the Frontend UI
+        if (!doctor) return res.status(404).json({ message: "Doctor profile not found." });
+
+        // 2. Fetch Appointments for this specific doctor
+        const appointments = await Appointment.find({ doctorId: doctor._id }).sort({ date: 1, time: 1 });
+
+        // 3. Unique Patients Count
+        const uniquePatientsFromApps = [...new Set(appointments.map(a => a.phone || a.patientName))];
+        const manualPatientsCount = await Patient.countDocuments(); 
+        const totalPatients = uniquePatientsFromApps.length + manualPatientsCount;
+
+        // 4. Calculate Stats (Upcoming includes Pending & Waiting)
+        const upcomingAppointments = appointments.filter(a => 
+            ['Upcoming', 'Pending', 'Waiting'].includes(a.status)
+        ).length;
+        
+        // Revenue logic
+        const revenueAppointments = appointments.filter(a => 
+            ['Completed', 'Approved'].includes(a.status)
+        );
+        
+        let totalRevenue = 0;
+        revenueAppointments.forEach(app => {
+            totalRevenue += (app.fee || doctor.fee || 0);
+        });
+
+        // 5. Format for Frontend UI
         const formattedAppointments = appointments.map(app => ({
             id: app._id,
             patientName: app.type === 'pet' ? (app.petName || app.patientName) : app.patientName,
@@ -871,17 +1272,20 @@ exports.getDoctorDashboard = async (req, res) => {
             type: app.type || "Human",
             age: app.age || "N/A",
             gender: app.gender || "Unknown",
-            date: new Date(app.date).toISOString().split('T')[0], // YYYY-MM-DD
-            time: app.time,
+            // Safe Date Formatting
+            date: app.date ? new Date(app.date).toISOString().split('T')[0] : "No Date",
+            time: app.time || "N/A",
             status: app.status,
             symptoms: app.problem || "General Checkup",
-            history: "No previous history fetched.", // Can be expanded later
-            img: app.type === 'pet' ? "https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=100&q=80" : `https://ui-avatars.com/api/?name=${encodeURIComponent(app.patientName)}&background=random&color=fff`,
+            history: "No previous history fetched.",
+            img: app.type === 'pet' 
+                ? "https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=100&q=80" 
+                : `https://ui-avatars.com/api/?name=${encodeURIComponent(app.patientName)}&background=random&color=fff`,
             phone: app.phone || "N/A",
-            email: "N/A",
             vitals: app.prescription?.vitals || null
         }));
 
+        // Response bhej rahe hain
         res.status(200).json({
             stats: {
                 patients: totalPatients,
@@ -892,26 +1296,51 @@ exports.getDoctorDashboard = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Dashboard Fetch Error:", error);
+        console.error("Dashboard Safe Fetch Error:", error);
         res.status(500).json({ message: "Server error loading dashboard." });
     }
 };
+
 
 // 2. Update Appointment Status from Dashboard
 exports.updateDashboardAppointmentStatus = async (req, res) => {
     try {
         const { id } = req.params;
-        const { status } = req.body; // e.g., 'Approved', 'Cancelled'
+        const { status } = req.body; // e.g., 'Approved', 'Cancelled', 'Completed'
 
-        const appointment = await Appointment.findByIdAndUpdate(
-            id,
+        // 1. Pehle us doctor ki ID nikal lo (Token se)
+        const tokenUserId = req.user._id || req.user.id;
+        const doctor = await Doctor.findOne({ 
+            $or: [{ userId: tokenUserId }, { email: req.user.email }] 
+        });
+
+        if (!doctor) {
+            return res.status(404).json({ message: "Doctor profile not found." });
+        }
+
+        // 2. Appointment update karo par CHECK karo ki doctorId match honi chahiye
+        const appointment = await Appointment.findOneAndUpdate(
+            { _id: id, doctorId: doctor._id }, // 🚨 Security check: Sirf apna appointment update kar sake
             { $set: { status: status } },
             { new: true }
         );
 
-        if (!appointment) return res.status(404).json({ message: "Appointment not found." });
+        if (!appointment) {
+            return res.status(404).json({ 
+                message: "Appointment not found or you are not authorized to update this." 
+            });
+        }
 
-        res.status(200).json({ message: `Status updated to ${status}`, appointment });
+        // 3. Status ke hisaab se response message
+        let displayMessage = `Appointment ${status} successfully.`;
+        if (status === 'Approved') displayMessage = "Appointment accepted! ✅";
+        if (status === 'Cancelled') displayMessage = "Appointment cancelled. ❌";
+
+        res.status(200).json({ 
+            message: displayMessage, 
+            appointment 
+        });
+
     } catch (error) {
         console.error("Status Update Error:", error);
         res.status(500).json({ message: "Server error updating status." });
