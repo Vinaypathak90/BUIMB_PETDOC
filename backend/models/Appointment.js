@@ -46,7 +46,7 @@ const appointmentSchema = mongoose.Schema({
     // Change: Receptionist flow ke liye 'Waiting', 'Checked-in' add kiye.
     status: { 
         type: String, 
-        enum: ['Scheduled', 'Completed', 'Cancelled', 'Waiting', 'Checked-in', 'With Doctor'], 
+        enum: ['Scheduled', 'Completed', 'Cancelled', 'Waiting', 'Checked-in', 'With Doctor','Pending'], 
         default: 'Scheduled' 
     },
     // 🚨 NAYI FIELDS: Visit ka type aur Consultation details ke liye

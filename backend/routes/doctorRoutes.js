@@ -54,5 +54,10 @@ router.put('/settings/profile', protect, doctorController.updateDoctorProfileSet
 // Sidebar Routes
 router.get('/sidebar-profile', protect, doctorController.getSidebarProfile);
 router.patch('/toggle-status', protect, doctorController.toggleAvailability);
+// ==========================================
+// 10. DOCTOR DASHBOARD
+// ==========================================
+router.get('/dashboard', protect, doctorController.getDoctorDashboard);
+router.patch('/dashboard/appointment/:id', protect, doctorController.updateDashboardAppointmentStatus);
 
 module.exports = router;

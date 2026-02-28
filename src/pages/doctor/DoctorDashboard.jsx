@@ -9,6 +9,7 @@ import {
 
 const DoctorDashboard = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   
   // --- CORE DATA STATE ---
   const [appointments, setAppointments] = useState([]);
@@ -16,89 +17,105 @@ const DoctorDashboard = () => {
   // --- DERIVED STATE (Updates automatically) ---
   const [stats, setStats] = useState({ patients: 0, appointments: 0, income: 0 });
   const [nextPatient, setNextPatient] = useState(null);
+  const [doctorProfile, setDoctorProfile] = useState({ name: "Doctor", img: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png" });
 
   // --- MODAL STATE ---
   const [selectedPatient, setSelectedPatient] = useState(null);
 
-  // --- MOCK DATA (Fallback) ---
-  const mockAppointments = [
-    {
-      id: 101, patientName: "Hendrita Hayes", type: "Human", age: "32", gender: "Female",
-      date: "2026-02-08", time: "10:00 AM", status: "Upcoming",
-      symptoms: "Severe Toothache, Swollen Gum",
-      history: "Root Canal (2022), Penicillin Allergy",
-      img: "https://randomuser.me/api/portraits/women/44.jpg",
-      phone: "+1 555-0123", email: "hendrita@example.com"
-    },
-    {
-      id: 102, patientName: "Bruno (Dog)", ownerName: "Rahul Verma", type: "Pet", age: "4", gender: "Male",
-      date: "2026-02-08", time: "11:30 AM", status: "Pending",
-      symptoms: "Limping left leg, Loss of appetite",
-      history: "Vaccination Up to date, Previous fracture (2024)",
-      img: "https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=100&q=80",
-      phone: "+91 9876543210", email: "rahul@example.com"
-    },
-    {
-      id: 103, patientName: "Adrian Marshall", type: "Human", age: "28", gender: "Male",
-      date: "2026-02-09", time: "09:00 AM", status: "Upcoming",
-      symptoms: "General Checkup, Mild Fever",
-      history: "No significant history",
-      img: "https://randomuser.me/api/portraits/men/32.jpg",
-      phone: "+1 555-0987", email: "adrian@example.com"
-    },
-    {
-      id: 104, patientName: "Kelly Joseph", type: "Human", age: "45", gender: "Female",
-      date: "2026-02-09", time: "11:00 AM", status: "Upcoming",
-      symptoms: "Migraine",
-      history: "Chronic Migraine since 2018",
-      img: "https://randomuser.me/api/portraits/women/65.jpg",
-      phone: "+1 555-1122", email: "kelly@example.com"
-    }
-  ];
+  // 🧠 Token Helper
+  const getToken = () => {
+    try {
+        const uToken = JSON.parse(localStorage.getItem('user_token'));
+        if (uToken?.token) return uToken.token;
+        const uInfo = JSON.parse(localStorage.getItem('userInfo'));
+        if (uInfo?.token) return uInfo.token;
+        return localStorage.getItem('token');
+    } catch (e) { return null; }
+  };
 
-  // --- 1. INITIAL LOAD (Runs Once) ---
+  // --- 1. INITIAL LOAD (Fetch Real Data from API) ---
   useEffect(() => {
-    const localData = JSON.parse(localStorage.getItem('myAppointments')) || [];
-    let combinedData = [...localData, ...mockAppointments];
-    
-    // Remove duplicates
-    combinedData = combinedData.filter((v, i, a) => a.findIndex(v2 => (v2.id === v.id)) === i);
+    const fetchDashboardData = async () => {
+      try {
+        const token = getToken();
+        if (!token) {
+            setIsLoading(false);
+            return;
+        }
 
-    // Sort by Date & Time (Simple Sort)
-    // Note: In a real app, use full Date objects. Here we roughly sort by ID/order for demo.
-    combinedData.sort((a, b) => a.id - b.id);
+        // Fetch user info for header
+        const uInfo = JSON.parse(localStorage.getItem('userInfo'));
+        if (uInfo && uInfo.name) {
+            setDoctorProfile({ name: uInfo.name, img: uInfo.img || "https://cdn-icons-png.flaticon.com/512/3135/3135715.png" });
+        }
 
-    setAppointments(combinedData);
+        // Fetch Dashboard API
+        const res = await fetch('http://localhost:5000/api/doctor/dashboard', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          
+          setStats(data.stats);
+          
+          // Sort appointments by date and time
+          const sortedApps = data.appointments.sort((a, b) => new Date(`${a.date} ${a.time}`) - new Date(`${b.date} ${b.time}`));
+          setAppointments(sortedApps);
+          
+          // Find the immediately next upcoming appointment
+          const upcoming = sortedApps.find(a => ['Upcoming', 'Pending', 'Waiting', 'Approved'].includes(a.status));
+          setNextPatient(upcoming || null);
+        }
+      } catch (error) {
+        console.error("Dashboard Load Error:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchDashboardData();
   }, []);
 
-  // --- 2. AUTO-UPDATE LOGIC (Runs whenever 'appointments' changes) ---
-  useEffect(() => {
-    // A. Update "Next Patient" (Find the first 'Upcoming' one)
-    const upcoming = appointments.find(a => a.status === 'Upcoming');
-    setNextPatient(upcoming || null);
+  // --- 2. HANDLE STATUS CHANGE (API CALL) ---
+  const handleStatusChange = async (id, newStatus) => {
+    try {
+        const token = getToken();
+        const res = await fetch(`http://localhost:5000/api/doctor/dashboard/appointment/${id}`, {
+            method: 'PATCH',
+            headers: { 
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ status: newStatus })
+        });
 
-    // B. Update Statistics
-    setStats({
-      patients: appointments.length + 850, // Mock base count
-      appointments: appointments.filter(a => a.status === 'Upcoming' || a.status === 'Pending').length,
-      // Calculate income based on completed + upcoming (projected)
-      income: appointments.filter(a => a.status !== 'Cancelled').length * 500 
-    });
-
-  }, [appointments]);
-
-  // --- HANDLERS ---
-  const handleStatusChange = (id, newStatus) => {
-    const updatedList = appointments.map(app =>
-      app.id === id ? { ...app, status: newStatus } : app
-    );
-    setAppointments(updatedList);
-    localStorage.setItem('myAppointments', JSON.stringify(updatedList));
+        if (res.ok) {
+            // Update local state to instantly reflect UI changes without reloading
+            const updatedList = appointments.map(app =>
+                app.id === id ? { ...app, status: newStatus } : app
+            );
+            setAppointments(updatedList);
+            
+            // Recalculate Next Patient if the current one was cancelled/completed
+            if (nextPatient && nextPatient.id === id && (newStatus === 'Cancelled' || newStatus === 'Completed')) {
+                const newNext = updatedList.find(a => ['Upcoming', 'Pending', 'Waiting', 'Approved'].includes(a.status));
+                setNextPatient(newNext || null);
+            }
+        } else {
+            alert("Failed to update appointment status.");
+        }
+    } catch (error) {
+        console.error("Status Update Error:", error);
+        alert("Server connection error.");
+    }
   };
 
   const openPatientDetails = (patient) => {
     setSelectedPatient(patient);
   };
+
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-500 bg-[#f8f9fa]">Loading Dashboard Data...</div>;
 
   return (
     <div className="bg-[#f8f9fa] min-h-screen relative font-sans">
@@ -115,8 +132,8 @@ const DoctorDashboard = () => {
           <div className="flex items-center gap-4">
             <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="lg:hidden p-2 text-slate-600 hover:bg-slate-100 rounded-lg"><Menu size={24} /></button>
             <div className="hidden md:block">
-              <h2 className="text-xl font-black text-[#192a56]">Dr. Edalin Hendry</h2>
-              <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Dental Specialist</p>
+              <h2 className="text-xl font-black text-[#192a56]">{doctorProfile.name}</h2>
+              <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Dashboard Overview</p>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -128,7 +145,7 @@ const DoctorDashboard = () => {
               <Bell size={20} />
               <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
             </button>
-            <img src="https://randomuser.me/api/portraits/men/85.jpg" alt="Doctor" className="w-10 h-10 rounded-full object-cover border-2 border-emerald-500 shadow-sm" />
+            <img src={doctorProfile.img} alt="Doctor" className="w-10 h-10 rounded-full object-cover border-2 border-emerald-500 shadow-sm" />
           </div>
         </header>
 
@@ -148,13 +165,13 @@ const DoctorDashboard = () => {
                 {/* Left: Patient Info */}
                 <div className="flex items-center gap-6 z-10 w-full md:w-auto">
                   <div className="relative">
-                    <img src={nextPatient.img} alt="" className="w-24 h-24 md:w-32 md:h-32 rounded-3xl object-cover border-4 border-white/20 shadow-lg" />
+                    <img src={nextPatient.img || "https://www.w3schools.com/howto/img_avatar.png"} alt="" className="w-24 h-24 md:w-32 md:h-32 rounded-3xl object-cover border-4 border-white/20 shadow-lg" />
                     <span className="absolute -bottom-2 -right-2 bg-emerald-500 text-white text-[10px] font-bold px-3 py-1 rounded-full border-2 border-[#192a56] shadow-sm animate-pulse">Live</span>
                   </div>
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <span className="bg-[#00d0f1] text-[#192a56] px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider">Next Up</span>
-                      <span className="text-white/60 text-xs font-bold flex items-center gap-1"><Clock size={12}/> Today, {nextPatient.time}</span>
+                      <span className="text-white/60 text-xs font-bold flex items-center gap-1"><Clock size={12}/> {nextPatient.date}, {nextPatient.time}</span>
                     </div>
                     <h2 className="text-3xl md:text-4xl font-black mb-1">{nextPatient.patientName}</h2>
                     <p className="text-blue-200 text-lg font-medium flex items-center gap-2">
@@ -167,7 +184,7 @@ const DoctorDashboard = () => {
                 <div className="flex gap-8 border-l border-white/10 pl-8 hidden lg:flex">
                   <div>
                     <p className="text-blue-300 text-xs font-bold uppercase mb-1">Patient ID</p>
-                    <p className="text-xl font-black">#APT00{nextPatient.id}</p>
+                    <p className="text-xl font-black">#{nextPatient.id?.slice(-5).toUpperCase() || 'N/A'}</p>
                   </div>
                   <div>
                     <p className="text-blue-300 text-xs font-bold uppercase mb-1">Type</p>
@@ -197,7 +214,7 @@ const DoctorDashboard = () => {
                   <CheckCircle size={32}/>
                </div>
                <h3 className="text-2xl font-black text-slate-800">All Caught Up!</h3>
-               <p className="text-slate-500">You have no upcoming appointments scheduled for today.</p>
+               <p className="text-slate-500">You have no upcoming appointments scheduled.</p>
             </div>
           )}
 
@@ -215,7 +232,7 @@ const DoctorDashboard = () => {
                       <span className="text-xs font-bold text-slate-400 uppercase">Total Patients</span>
                     </div>
                     <h3 className="text-3xl font-black text-slate-800">{stats.patients}</h3>
-                    <p className="text-xs text-emerald-500 font-bold mt-1 flex items-center gap-1">↑ 15% <span className="text-slate-400 font-medium">from last week</span></p>
+                    <p className="text-xs text-emerald-500 font-bold mt-1 flex items-center gap-1">↑ Active <span className="text-slate-400 font-medium">in database</span></p>
                   </div>
                 </div>
 
@@ -226,7 +243,7 @@ const DoctorDashboard = () => {
                       <span className="text-xs font-bold text-slate-400 uppercase">Appointments</span>
                     </div>
                     <h3 className="text-3xl font-black text-slate-800">{stats.appointments}</h3>
-                    <p className="text-xs text-orange-500 font-bold mt-1 flex items-center gap-1">● Today <span className="text-slate-400 font-medium">Pending</span></p>
+                    <p className="text-xs text-orange-500 font-bold mt-1 flex items-center gap-1">● Active / Upcoming</p>
                   </div>
                 </div>
 
@@ -237,7 +254,7 @@ const DoctorDashboard = () => {
                       <span className="text-xs font-bold text-slate-400 uppercase">Total Revenue</span>
                     </div>
                     <h3 className="text-3xl font-black text-slate-800">₹{stats.income.toLocaleString()}</h3>
-                    <p className="text-xs text-emerald-500 font-bold mt-1 flex items-center gap-1">↑ 20% <span className="text-slate-400 font-medium">increase</span></p>
+                    <p className="text-xs text-emerald-500 font-bold mt-1 flex items-center gap-1">↑ Expected <span className="text-slate-400 font-medium">Earnings</span></p>
                   </div>
                 </div>
               </div>
@@ -248,13 +265,17 @@ const DoctorDashboard = () => {
                   <h3 className="text-xl font-bold text-slate-800">Appointment Queue</h3>
                   <div className="flex gap-2">
                     <select className="bg-slate-50 border border-slate-200 text-xs font-bold text-slate-600 rounded-lg px-3 py-2 outline-none cursor-pointer hover:bg-slate-100">
-                      <option>Today</option><option>This Week</option><option>Next Week</option>
+                      <option>All</option>
+                      <option>Today</option>
                     </select>
                   </div>
                 </div>
 
                 <div className="p-6 space-y-4">
-                  {appointments.filter(a => a.status !== 'Cancelled').map((app) => (
+                  {appointments.length === 0 ? (
+                      <div className="text-center py-10 text-slate-400">No appointments found in database.</div>
+                  ) : (
+                    appointments.filter(a => a.status !== 'Cancelled').map((app) => (
                     <div key={app.id} className={`flex flex-col md:flex-row items-center gap-6 p-5 rounded-2xl border transition-all bg-white group ${app.id === nextPatient?.id ? 'border-[#00d0f1] shadow-md bg-blue-50/30' : 'border-slate-100 hover:border-blue-200 hover:shadow-sm'}`}>
 
                       <div className="flex items-center gap-4 w-full md:w-auto">
@@ -264,7 +285,7 @@ const DoctorDashboard = () => {
                         </div>
                         <div className="flex flex-col">
                           <h4 className="text-lg font-bold text-slate-800 cursor-pointer hover:text-[#00d0f1] transition-colors" onClick={() => openPatientDetails(app)}>{app.patientName}</h4>
-                          <p className="text-xs text-slate-500 font-medium">ID: #APT00{app.id}</p>
+                          <p className="text-xs text-slate-500 font-medium">#{app.id.slice(-5).toUpperCase()}</p>
                         </div>
                       </div>
 
@@ -279,23 +300,26 @@ const DoctorDashboard = () => {
                         </div>
                         <div>
                           <p className="text-[10px] font-bold text-slate-400 uppercase">Disease / Issue</p>
-                          <p className="text-sm font-bold text-slate-700 mt-1 truncate max-w-[120px]">{app.symptoms || "General Checkup"}</p>
+                          <p className="text-sm font-bold text-slate-700 mt-1 truncate max-w-[120px]">{app.symptoms}</p>
                         </div>
                       </div>
 
                       <div className="flex gap-3 w-full md:w-auto justify-end">
-                        {app.status === 'Pending' || app.status === 'Upcoming' ? (
+                        {app.status === 'Pending' || app.status === 'Waiting' ? (
                           <>
                             <button onClick={() => handleStatusChange(app.id, 'Approved')} className="p-2 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors" title="Accept"><CheckCircle size={20} /></button>
                             <button onClick={() => handleStatusChange(app.id, 'Cancelled')} className="p-2 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 transition-colors" title="Cancel"><XCircle size={20} /></button>
                           </>
                         ) : (
-                          <span className="px-4 py-2 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-xl flex items-center gap-1"><CheckCircle size={14}/> {app.status}</span>
+                           <span className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1 ${app.status === 'Completed' || app.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                              <CheckCircle size={14}/> {app.status}
+                           </span>
                         )}
                         <button onClick={() => openPatientDetails(app)} className="px-4 py-2 bg-[#192a56] text-white text-xs font-bold rounded-xl hover:bg-blue-900 transition-all shadow-md">View Details</button>
                       </div>
                     </div>
-                  ))}
+                  ))
+                  )}
                 </div>
               </div>
             </div>
@@ -342,13 +366,13 @@ const DoctorDashboard = () => {
             <div className="w-full md:w-1/3 bg-slate-50 border-r border-slate-200 p-8 flex flex-col items-center text-center overflow-y-auto">
               <img src={selectedPatient.img || "https://www.w3schools.com/howto/img_avatar.png"} alt="" className="w-32 h-32 rounded-full object-cover border-4 border-white shadow-lg mb-4" />
               <h2 className="text-2xl font-black text-slate-800">{selectedPatient.patientName}</h2>
-              <p className="text-sm text-slate-500 font-medium mb-6">ID: #PT00{selectedPatient.id}</p>
+              <p className="text-sm text-slate-500 font-medium mb-6">ID: #{selectedPatient.id.slice(-5).toUpperCase()}</p>
 
               <div className="w-full space-y-4">
                 <div className="flex justify-between border-b border-slate-200 pb-2"><span className="text-xs font-bold text-slate-400">Gender</span><span className="text-sm font-bold text-slate-700">{selectedPatient.gender}</span></div>
-                <div className="flex justify-between border-b border-slate-200 pb-2"><span className="text-xs font-bold text-slate-400">Age</span><span className="text-sm font-bold text-slate-700">{selectedPatient.age} Years</span></div>
+                <div className="flex justify-between border-b border-slate-200 pb-2"><span className="text-xs font-bold text-slate-400">Age</span><span className="text-sm font-bold text-slate-700">{selectedPatient.age}</span></div>
                 <div className="flex justify-between border-b border-slate-200 pb-2"><span className="text-xs font-bold text-slate-400">Phone</span><span className="text-sm font-bold text-slate-700">{selectedPatient.phone || 'N/A'}</span></div>
-                {selectedPatient.type === 'Pet' && (<div className="flex justify-between border-b border-slate-200 pb-2"><span className="text-xs font-bold text-slate-400">Owner</span><span className="text-sm font-bold text-slate-700">{selectedPatient.ownerName}</span></div>)}
+                {selectedPatient.type === 'pet' && (<div className="flex justify-between border-b border-slate-200 pb-2"><span className="text-xs font-bold text-slate-400">Owner</span><span className="text-sm font-bold text-slate-700">{selectedPatient.ownerName}</span></div>)}
               </div>
 
               <div className="mt-auto w-full flex gap-3 pt-6">
@@ -377,24 +401,17 @@ const DoctorDashboard = () => {
                   </div>
                 </div>
 
-                <div>
-                  <h4 className="text-sm font-bold text-slate-800 mb-3">Last Vitals Readings</h4>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center"><p className="text-xs text-slate-400 font-bold uppercase">Heart Rate</p><p className="text-lg font-black text-slate-800">82 <span className="text-[10px] text-slate-400">bpm</span></p></div>
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center"><p className="text-xs text-slate-400 font-bold uppercase">Body Temp</p><p className="text-lg font-black text-slate-800">98.6 <span className="text-[10px] text-slate-400">F</span></p></div>
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center"><p className="text-xs text-slate-400 font-bold uppercase">Glucose</p><p className="text-lg font-black text-slate-800">92 <span className="text-[10px] text-slate-400">mg/dl</span></p></div>
-                  </div>
-                </div>
-
-                <div>
-                  <h4 className="text-sm font-bold text-slate-800 mb-3">Attached Reports</h4>
-                  <div className="flex gap-3">
-                    <div className="flex items-center gap-3 p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
-                      <div className="w-8 h-8 bg-red-100 text-red-600 rounded-lg flex items-center justify-center"><FileText size={14} /></div>
-                      <div><p className="text-xs font-bold text-slate-700">Blood_Report.pdf</p><p className="text-[10px] text-slate-400">12th Oct 2025</p></div>
+                {selectedPatient.vitals && (
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-800 mb-3">Last Vitals Readings</h4>
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center"><p className="text-xs text-slate-400 font-bold uppercase">Pulse</p><p className="text-lg font-black text-slate-800">{selectedPatient.vitals.pulse || '-'} <span className="text-[10px] text-slate-400">bpm</span></p></div>
+                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center"><p className="text-xs text-slate-400 font-bold uppercase">Body Temp</p><p className="text-lg font-black text-slate-800">{selectedPatient.vitals.temp || '-'} <span className="text-[10px] text-slate-400">F</span></p></div>
+                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-center"><p className="text-xs text-slate-400 font-bold uppercase">BP</p><p className="text-lg font-black text-slate-800">{selectedPatient.vitals.bp || '-'} <span className="text-[10px] text-slate-400"></span></p></div>
+                      </div>
                     </div>
-                  </div>
-                </div>
+                )}
+
               </div>
             </div>
           </div>

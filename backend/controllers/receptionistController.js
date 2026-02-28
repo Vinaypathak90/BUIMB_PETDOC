@@ -101,31 +101,48 @@ exports.getAppointments = async (req, res) => {
 // ==========================================
 // 2. BOOK NEW APPOINTMENT (Receptionist)
 // ==========================================
+
+
 exports.bookAppointment = async (req, res) => {
     try {
         // Frontend se jo data aa raha hai
         const { name, contact, date, time, doctor, type, reason } = req.body;
 
+        // 🚨 NAYA LOGIC: Doctor ko database mein dhoondo taaki uski ID mil sake
+        // Yahan 'doctor' variable mein frontend se doctor ka naam aa raha hoga
+        const assignedDoctor = await Doctor.findOne({ name: doctor });
+
+        if (!assignedDoctor) {
+            return res.status(404).json({ 
+                message: `Doctor '${doctor}' not found in the database. Please select a valid doctor.` 
+            });
+        }
+
         // Naya appointment create karo
         const newAppointment = new Appointment({
             // Receptionist booking mein 'user' field khali rahega (kyunki yeh walk-in hai)
-            
             patientName: name,      
-            phone: contact,         // Schema mein 'phone' required hai
-            address: "Clinic Visit", // Default address daal rahe hain taaki validation pass ho
+            phone: contact,         
+            address: "Clinic Visit", 
             
-            doctorName: doctor,     // Doctor ka naam string mein save kar rahe hain
+            // 🚨 SABSE IMPORTANT FIELDS (Link to Doctor Dashboard)
+            doctorId: assignedDoctor._id,     // Iske bina doctor ke dashboard par appointment nahi aayega!
+            doctorName: assignedDoctor.name,  // Asli naam save hoga
+            fee: assignedDoctor.fee || 500,   // Doctor ki DB wali fee laga do
             
             date,
             time,
-            // Automatic Day Calculation (e.g., 'Monday')
+            // Automatic Day Calculation
             day: new Date(date).toLocaleDateString('en-US', { weekday: 'long' }),
 
-            type: type || 'Walk-in', // Agar type nahi aaya to default Walk-in
-            status: 'Waiting',       // Walk-in patient pehle waiting mein jayega
+            type: type || 'Walk-in',
+            
+            // 🚨 Status 'Pending' rakha hai taaki Doctor Dashboard ke filter mein aa jaye
+            status: 'Pending', 
             
             problem: reason || "General Visit",
-            paymentStatus: 'Pending'
+            paymentStatus: 'Pending',
+            bookedBy: 'Receptionist' // Tracker
         });
 
         const savedAppt = await newAppointment.save();

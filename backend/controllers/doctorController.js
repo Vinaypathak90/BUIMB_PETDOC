@@ -830,3 +830,90 @@ exports.toggleAvailability = async (req, res) => {
         res.status(500).json({ message: "Server Error", error: error.message });
     }
 };
+
+
+// =========================================================================
+// 🚀 SECTION 10: DOCTOR DASHBOARD
+// =========================================================================
+
+// 1. Fetch Dashboard Data (Appointments & Stats)
+exports.getDoctorDashboard = async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ message: "Not authorized." });
+
+        const doctor = await Doctor.findOne({ $or: [{ email: req.user.email }, { userId: req.user._id }] });
+        if (!doctor) return res.status(404).json({ message: "Doctor not found." });
+
+        // 1. Fetch Appointments for this doctor
+        const appointments = await Appointment.find({ doctorId: doctor._id }).sort({ date: 1, time: 1 });
+
+        // 2. Fetch total unique patients count (from Appointment collection & Patient collection)
+        // Combine them to get a unique patient count
+        const uniquePatientsFromApps = [...new Set(appointments.map(a => a.phone || a.patientName))];
+        const manualPatientsCount = await Patient.countDocuments(); // Assume all manual belong to clinic
+        const totalPatients = uniquePatientsFromApps.length + manualPatientsCount;
+
+        // 3. Calculate Stats
+        const upcomingAppointments = appointments.filter(a => a.status === 'Upcoming' || a.status === 'Pending').length;
+        
+        // Calculate Revenue (Completed/Approved appointments * doctor's fee)
+        const revenueAppointments = appointments.filter(a => a.status === 'Completed' || a.status === 'Approved');
+        let totalRevenue = 0;
+        revenueAppointments.forEach(app => {
+            totalRevenue += (app.fee || doctor.fee || 0); // fallback to doctor's default fee
+        });
+
+        // 4. Format appointments for the Frontend UI
+        const formattedAppointments = appointments.map(app => ({
+            id: app._id,
+            patientName: app.type === 'pet' ? (app.petName || app.patientName) : app.patientName,
+            ownerName: app.ownerName || "",
+            type: app.type || "Human",
+            age: app.age || "N/A",
+            gender: app.gender || "Unknown",
+            date: new Date(app.date).toISOString().split('T')[0], // YYYY-MM-DD
+            time: app.time,
+            status: app.status,
+            symptoms: app.problem || "General Checkup",
+            history: "No previous history fetched.", // Can be expanded later
+            img: app.type === 'pet' ? "https://images.unsplash.com/photo-1543466835-00a7907e9de1?auto=format&fit=crop&w=100&q=80" : `https://ui-avatars.com/api/?name=${encodeURIComponent(app.patientName)}&background=random&color=fff`,
+            phone: app.phone || "N/A",
+            email: "N/A",
+            vitals: app.prescription?.vitals || null
+        }));
+
+        res.status(200).json({
+            stats: {
+                patients: totalPatients,
+                appointments: upcomingAppointments,
+                income: totalRevenue
+            },
+            appointments: formattedAppointments
+        });
+
+    } catch (error) {
+        console.error("Dashboard Fetch Error:", error);
+        res.status(500).json({ message: "Server error loading dashboard." });
+    }
+};
+
+// 2. Update Appointment Status from Dashboard
+exports.updateDashboardAppointmentStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body; // e.g., 'Approved', 'Cancelled'
+
+        const appointment = await Appointment.findByIdAndUpdate(
+            id,
+            { $set: { status: status } },
+            { new: true }
+        );
+
+        if (!appointment) return res.status(404).json({ message: "Appointment not found." });
+
+        res.status(200).json({ message: `Status updated to ${status}`, appointment });
+    } catch (error) {
+        console.error("Status Update Error:", error);
+        res.status(500).json({ message: "Server error updating status." });
+    }
+};
