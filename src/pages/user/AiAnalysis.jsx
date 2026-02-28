@@ -13,17 +13,25 @@ const AiAnalysis = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [inputText, setInputText] = useState("");
   const [messages, setMessages] = useState([]); 
+  const [historyItems, setHistoryItems] = useState([]); // 🚨 REAL HISTORY STATE
   const messagesEndRef = useRef(null);
   const navigate = useNavigate();
 
-  // --- MOCK HISTORY ---
-  const historyItems = [
-    { id: 1, title: "Blood Count Analysis", date: "Yesterday" },
-  ];
-
+  // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isAnalyzing]);
+
+  // 🚨 LOAD REAL HISTORY FROM LOCAL STORAGE
+  useEffect(() => {
+    const savedReports = JSON.parse(localStorage.getItem('dashboardReports')) || [];
+    const formattedHistory = savedReports.map((report, index) => ({
+        id: report.id || index,
+        title: report.disease,
+        date: report.date
+    }));
+    setHistoryItems(formattedHistory);
+  }, [messages]); // Updates whenever a new message/report is added
 
   // --- 🟢 REAL API FUNCTION (Google Gemini) ---
   const fetchAiResponse = async (userInput, fileData = null) => {
@@ -95,6 +103,7 @@ const AiAnalysis = () => {
     fetchAiResponse(text);
   };
 
+  // 🚨 UPDATED: IMAGE PREVIEW LOGIC
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -105,16 +114,17 @@ const AiAnalysis = () => {
     reader.onloadend = () => {
         const base64Data = reader.result;
         
-        // Show in chat
+        // Show Image in chat
         const userMsg = {
-            id: Date.now(), sender: 'user', type: 'file', 
+            id: Date.now(), sender: 'user', type: 'image', 
+            fileData: base64Data, // For showing actual image thumbnail
             fileName: file.name, fileSize: (file.size / 1024).toFixed(2) + " KB", 
             time: getCurrentTime()
         };
         setMessages(prev => [...prev, userMsg]);
 
         // Send to AI
-        fetchAiResponse("Analyze this medical document.", base64Data);
+        fetchAiResponse("Please analyze this medical image/report and provide details.", base64Data);
     };
   };
 
@@ -210,20 +220,20 @@ const AiAnalysis = () => {
 
                             <div className={`max-w-[85%] sm:max-w-[75%] space-y-1 ${msg.sender === 'user' ? 'items-end flex flex-col' : ''}`}>
                                 
-                                {/* TEXT */}
+                                {/* TEXT MESSAGE */}
                                 {msg.text && (
                                     <div className={`px-5 py-3.5 text-sm leading-relaxed shadow-sm ${msg.sender === 'user' ? 'bg-[#00d0f1] text-[#192a56] font-bold rounded-2xl rounded-tr-sm' : 'bg-white text-slate-700 border border-slate-200 rounded-2xl rounded-tl-sm'}`}>{msg.text}</div>
                                 )}
 
-                                {/* FILE */}
-                                {msg.type === 'file' && (
-                                    <div className="bg-white p-4 rounded-2xl rounded-tr-sm border border-slate-200 shadow-sm flex items-center gap-4 min-w-[280px]">
-                                        <div className="w-10 h-10 bg-red-50 text-red-500 rounded-xl flex items-center justify-center border border-red-100"><FileText size={20} /></div>
-                                        <div className="flex-1 min-w-0"><p className="text-sm font-bold text-slate-800 truncate">{msg.fileName}</p><p className="text-[10px] text-slate-400 font-medium">{msg.fileSize}</p></div><Activity size={18} className="text-emerald-500 animate-pulse" />
+                                {/* FILE/IMAGE MESSAGE (UPDATED) */}
+                                {msg.type === 'image' && (
+                                    <div className="bg-white p-2 rounded-2xl rounded-tr-sm border border-slate-200 shadow-sm flex flex-col items-end">
+                                        <img src={msg.fileData} alt="Uploaded report" className="w-48 h-auto max-h-48 object-cover rounded-xl border border-slate-100 mb-2" />
+                                        <p className="text-[10px] text-slate-400 font-medium px-2 pb-1 w-full text-left">{msg.fileName} ({msg.fileSize})</p>
                                     </div>
                                 )}
 
-                                {/* AI REPORT CARD */}
+                                {/* AI REPORT CARD (UPDATED SMART ROUTING) */}
                                 {msg.type === 'report' && msg.data && (
                                     <div className="bg-white rounded-2xl rounded-tl-sm border border-slate-200 shadow-xl overflow-hidden w-full sm:w-[420px]">
                                         <div className="bg-gradient-to-r from-slate-50 to-white border-b border-slate-100 p-4 flex justify-between items-center">
@@ -233,7 +243,7 @@ const AiAnalysis = () => {
                                         <div className="p-5 space-y-5">
                                             <div>
                                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Detected Condition</p>
-                                                <div className="flex justify-between items-start"><p className="text-xl font-black text-slate-800">{msg.data.disease}</p><span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${msg.data.severity === 'High' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{msg.data.severity} Risk</span></div>
+                                                <div className="flex justify-between items-start"><p className="text-xl font-black text-slate-800">{msg.data.disease}</p><span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${msg.data.severity === 'High' || msg.data.severity === 'Critical' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{msg.data.severity} Risk</span></div>
                                             </div>
                                             <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100">
                                                 <p className="text-xs font-bold text-blue-900 mb-2 flex items-center gap-2"><FileText size={12}/> Analysis Summary</p>
@@ -241,7 +251,10 @@ const AiAnalysis = () => {
                                                 {msg.data.symptoms && <div className="mt-3 flex flex-wrap gap-2">{msg.data.symptoms.map((sym, i) => (<span key={i} className="text-[10px] bg-white border border-slate-200 px-2 py-1 rounded-md text-slate-500 font-medium">{sym}</span>))}</div>}
                                             </div>
                                             <div className="pt-2">
-                                                <Link to="/user/book-appointment" className="w-full bg-[#192a56] hover:bg-blue-900 text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-900/10">Consult {msg.data.doctorType} <ChevronRight size={16} /></Link>
+                                                {/* 🚨 SMART ROUTING: Passes the AI recommended specialty to the booking page */}
+                                                <Link to={`/user/book-appointment?specialty=${encodeURIComponent(msg.data.doctorType)}`} className="w-full bg-[#192a56] hover:bg-blue-900 text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-900/10">
+                                                    Consult {msg.data.doctorType} <ChevronRight size={16} />
+                                                </Link>
                                                 <p className="text-[10px] text-center text-slate-400 mt-2">Recommended based on severity.</p>
                                             </div>
                                         </div>
@@ -295,13 +308,18 @@ const AiAnalysis = () => {
                     <button onClick={() => setShowHistory(false)} className="lg:hidden p-1 hover:bg-slate-100 rounded"><X size={18}/></button>
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
-                    {historyItems.map((item) => (
-                        <div key={item.id} className="group p-3 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200 cursor-pointer transition-all">
-                            <div className="flex justify-between items-start mb-1"><p className="text-xs font-bold text-slate-700 line-clamp-1 group-hover:text-[#00d0f1]">{item.title}</p><button className="text-slate-300 hover:text-slate-600"><MoreHorizontal size={14}/></button></div>
-                            <div className="flex items-center gap-2 text-[10px] text-slate-400"><Clock size={10} /> {item.date}</div>
-                        </div>
-                    ))}
-                    <button className="w-full mt-4 py-3 border border-dashed border-slate-300 rounded-xl text-xs font-bold text-slate-400 hover:text-slate-600 hover:border-slate-400 transition-all flex items-center justify-center gap-2">+ Start New Chat</button>
+                    {/* 🚨 UPDATED: Real History Render */}
+                    {historyItems.length === 0 ? (
+                        <p className="text-xs text-slate-400 text-center mt-5">No previous analysis found.</p>
+                    ) : (
+                        historyItems.map((item) => (
+                            <div key={item.id} className="group p-3 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200 cursor-pointer transition-all">
+                                <div className="flex justify-between items-start mb-1"><p className="text-xs font-bold text-slate-700 line-clamp-1 group-hover:text-[#00d0f1]">{item.title}</p><button className="text-slate-300 hover:text-slate-600"><MoreHorizontal size={14}/></button></div>
+                                <div className="flex items-center gap-2 text-[10px] text-slate-400"><Clock size={10} /> {item.date}</div>
+                            </div>
+                        ))
+                    )}
+                    <button onClick={() => setMessages([])} className="w-full mt-4 py-3 border border-dashed border-slate-300 rounded-xl text-xs font-bold text-slate-400 hover:text-slate-600 hover:border-slate-400 transition-all flex items-center justify-center gap-2">+ Start New Chat</button>
                 </div>
             </div>
         </div>

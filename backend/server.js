@@ -12,6 +12,7 @@ const transactionRoutes = require('./routes/transactionRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const receptionistRoutes = require('./routes/receptionistRoutes'); 
 
+
 // 🚨 YAHAN DOCTOR ROUTES IMPORT KIYE HAIN 🚨
 const doctorRoutes = require('./routes/doctorRoutes');
 
