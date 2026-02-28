@@ -1,19 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { 
   LayoutGrid, Calendar, Users, MessageSquare, 
   Clock, Settings, LogOut, FileText, Star, 
   Power, X, Stethoscope 
 } from 'lucide-react';
 
+// 🚨 Yahan LogoutModal import kiya gaya hai (Agar dusre folder me hai to path change karein, e.g., '../LogoutModal')
+import LogoutModal from './DoctorLogoutModal'; 
+
 const DoctorSidebar = ({ closeSidebar }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [doctor, setDoctor] = useState({
     name: "Loading...",
     img: "",
     qualification: "",
     status: "off duty"
   });
+
+  // 🚨 Logout Modal ki state
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   // 🧠 Token Helper
   const getToken = () => {
@@ -51,7 +58,7 @@ const DoctorSidebar = ({ closeSidebar }) => {
       }
     };
     fetchSidebarData();
-  }, []);
+  }, [location.pathname]);
 
   // --- 2. ACTUAL API CALL FOR TOGGLE ---
   const toggleAvailability = async () => {
@@ -69,7 +76,6 @@ const DoctorSidebar = ({ closeSidebar }) => {
       
       if (res.ok) {
         const data = await res.json();
-        // Database se aane wala naya status state mein set karein
         setDoctor(prev => ({ ...prev, status: data.status }));
       } else {
         alert("Status change failed at server.");
@@ -79,9 +85,11 @@ const DoctorSidebar = ({ closeSidebar }) => {
     }
   };
 
-  const handleLogout = () => {
+  // 🚨 Actual Logout Function (Jo modal confirm hone pe chalega)
+  const handleConfirmLogout = () => {
     localStorage.clear();
-    navigate('/'); 
+    setIsLogoutModalOpen(false); // Modal band karo
+    navigate('/'); // Login screen pe bhejo
   };
 
   const isAvailable = doctor.status === 'on duty';
@@ -107,6 +115,7 @@ const DoctorSidebar = ({ closeSidebar }) => {
         `}
       </style>
 
+      {/* SIDEBAR MAIN CONTAINER */}
       <div className="h-full w-full bg-[#192a56] text-white flex flex-col shadow-2xl overflow-y-auto no-scrollbar relative">
         
         <button onClick={closeSidebar} className="absolute top-4 right-4 p-2 bg-white/10 rounded-full text-white lg:hidden z-50 transition-all">
@@ -161,16 +170,24 @@ const DoctorSidebar = ({ closeSidebar }) => {
           ))}
         </nav>
 
-        {/* LOGOUT */}
+        {/* LOGOUT BUTTON IN SIDEBAR */}
         <div className="p-4 border-t border-white/10 bg-[#152347] shrink-0">
           <button 
-            onClick={handleLogout}
+            onClick={() => setIsLogoutModalOpen(true)} // 🚨 Seedha logout karne ki jagah Modal open hoga
             className="flex items-center justify-center gap-3 w-full px-4 py-3 text-xs font-black text-red-400 hover:bg-red-500/10 hover:text-red-300 rounded-xl transition-all duration-200"
           >
             <LogOut size={18} /> <span className="truncate uppercase tracking-widest">Sign Out</span>
           </button>
         </div>
       </div>
+
+      {/* 🚨 YAHAN HUM APNE MODAL COMPONENT KO USE KAR RAHE HAIN 🚨 */}
+      <LogoutModal 
+        isOpen={isLogoutModalOpen} 
+        onClose={() => setIsLogoutModalOpen(false)} 
+        onConfirm={handleConfirmLogout} 
+      />
+      
     </>
   );
 };

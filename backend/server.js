@@ -13,7 +13,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const receptionistRoutes = require('./routes/receptionistRoutes'); 
 
 // 🚨 YAHAN DOCTOR ROUTES IMPORT KIYE HAIN 🚨
-const doctorRoutes = require('./routes/doctorRoutes'); 
+const doctorRoutes = require('./routes/doctorRoutes');
 
 connectDB(); // Connect to MongoDB
 

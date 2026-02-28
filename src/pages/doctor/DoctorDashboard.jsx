@@ -13,11 +13,12 @@ const DoctorDashboard = () => {
   
   // --- CORE DATA STATE ---
   const [appointments, setAppointments] = useState([]);
+  const [searchTerm, setSearchTerm] = useState(""); // 🚨 Search State Added
   
-  // --- DERIVED STATE (Updates automatically) ---
+  // --- DERIVED STATE ---
   const [stats, setStats] = useState({ patients: 0, appointments: 0, income: 0 });
   const [nextPatient, setNextPatient] = useState(null);
-  const [doctorProfile, setDoctorProfile] = useState({ name: "Doctor", img: "https://cdn-icons-png.flaticon.com/512/3135/3135715.png" });
+  const [doctorProfile, setDoctorProfile] = useState({ name: "Doctor", img: "" });
 
   // --- MODAL STATE ---
   const [selectedPatient, setSelectedPatient] = useState(null);
@@ -33,7 +34,7 @@ const DoctorDashboard = () => {
     } catch (e) { return null; }
   };
 
-  // --- 1. INITIAL LOAD (Fetch Real Data from API) ---
+  // --- 1. FETCH DATA FROM BACKEND ---
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
@@ -43,20 +44,25 @@ const DoctorDashboard = () => {
             return;
         }
 
-        // Fetch user info for header
-        const uInfo = JSON.parse(localStorage.getItem('userInfo'));
-        if (uInfo && uInfo.name) {
-            setDoctorProfile({ name: uInfo.name, img: uInfo.img || "https://cdn-icons-png.flaticon.com/512/3135/3135715.png" });
+        // 🚨 1. Fetch Doctor Profile (For Header Name & Image)
+        const profileRes = await fetch('http://localhost:5000/api/doctor/sidebar-profile', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (profileRes.ok) {
+            const profileData = await profileRes.json();
+            setDoctorProfile({ 
+                name: profileData.name || "Doctor", 
+                img: profileData.img || `https://ui-avatars.com/api/?name=${encodeURIComponent(profileData.name || 'Doctor')}&background=random&color=fff`
+            });
         }
 
-        // Fetch Dashboard API
+        // 🚨 2. Fetch Dashboard API (Stats & Appointments)
         const res = await fetch('http://localhost:5000/api/doctor/dashboard', {
           headers: { 'Authorization': `Bearer ${token}` }
         });
 
         if (res.ok) {
           const data = await res.json();
-          
           setStats(data.stats);
           
           // Sort appointments by date and time
@@ -91,7 +97,6 @@ const DoctorDashboard = () => {
         });
 
         if (res.ok) {
-            // Update local state to instantly reflect UI changes without reloading
             const updatedList = appointments.map(app =>
                 app.id === id ? { ...app, status: newStatus } : app
             );
@@ -114,6 +119,13 @@ const DoctorDashboard = () => {
   const openPatientDetails = (patient) => {
     setSelectedPatient(patient);
   };
+
+  // 🚨 Search Filter Logic
+  const filteredAppointments = appointments.filter(app => 
+    app.patientName?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    app.id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    app.phone?.includes(searchTerm)
+  );
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center font-bold text-slate-500 bg-[#f8f9fa]">Loading Dashboard Data...</div>;
 
@@ -139,12 +151,20 @@ const DoctorDashboard = () => {
           <div className="flex items-center gap-4">
             <div className="relative hidden md:block">
               <Search size={18} className="absolute top-3 left-3 text-slate-400" />
-              <input type="text" placeholder="Search patients..." className="pl-10 pr-4 py-2.5 bg-slate-100 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#192a56]/20 w-64 transition-all" />
+              {/* 🚨 Search Input Connected to State */}
+              <input 
+                type="text" 
+                placeholder="Search patients or ID..." 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2.5 bg-slate-100 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#192a56]/20 w-64 transition-all" 
+              />
             </div>
             <button className="p-2.5 text-slate-500 hover:bg-slate-100 rounded-full relative">
               <Bell size={20} />
               <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
             </button>
+            {/* 🚨 Doctor Header Image */}
             <img src={doctorProfile.img} alt="Doctor" className="w-10 h-10 rounded-full object-cover border-2 border-emerald-500 shadow-sm" />
           </div>
         </header>
@@ -152,7 +172,7 @@ const DoctorDashboard = () => {
         <main className="p-6 md:p-8 max-w-[1600px] mx-auto">
 
           {/* =========================================================
-              SECTION 1: NEXT PATIENT HERO CARD (Top Priority)
+              SECTION 1: NEXT PATIENT HERO CARD
              ========================================================= */}
           {nextPatient ? (
             <div className="mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
@@ -208,7 +228,6 @@ const DoctorDashboard = () => {
               </div>
             </div>
           ) : (
-            // Fallback if no upcoming appointments
             <div className="mb-8 bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm text-center">
                <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-4">
                   <CheckCircle size={32}/>
@@ -223,7 +242,7 @@ const DoctorDashboard = () => {
             {/* --- LEFT COLUMN --- */}
             <div className="xl:col-span-3 space-y-8">
 
-              {/* 2. Stats Row */}
+              {/* Stats Row */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                 <div className="bg-white p-6 rounded-[1.5rem] border border-slate-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all">
                   <div>
@@ -259,7 +278,7 @@ const DoctorDashboard = () => {
                 </div>
               </div>
 
-              {/* 3. Upcoming Appointments List */}
+              {/* Upcoming Appointments List */}
               <div className="bg-white rounded-[2rem] border border-slate-200 shadow-sm overflow-hidden">
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center">
                   <h3 className="text-xl font-bold text-slate-800">Appointment Queue</h3>
@@ -272,10 +291,11 @@ const DoctorDashboard = () => {
                 </div>
 
                 <div className="p-6 space-y-4">
-                  {appointments.length === 0 ? (
-                      <div className="text-center py-10 text-slate-400">No appointments found in database.</div>
+                  {/* 🚨 Use filteredAppointments here */}
+                  {filteredAppointments.length === 0 ? (
+                      <div className="text-center py-10 text-slate-400">No appointments found matching your search.</div>
                   ) : (
-                    appointments.filter(a => a.status !== 'Cancelled').map((app) => (
+                    filteredAppointments.filter(a => a.status !== 'Cancelled').map((app) => (
                     <div key={app.id} className={`flex flex-col md:flex-row items-center gap-6 p-5 rounded-2xl border transition-all bg-white group ${app.id === nextPatient?.id ? 'border-[#00d0f1] shadow-md bg-blue-50/30' : 'border-slate-100 hover:border-blue-200 hover:shadow-sm'}`}>
 
                       <div className="flex items-center gap-4 w-full md:w-auto">
@@ -326,8 +346,6 @@ const DoctorDashboard = () => {
 
             {/* --- RIGHT COLUMN --- */}
             <div className="xl:col-span-1 space-y-8">
-
-              {/* Weekly Overview (Bar Chart) */}
               <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-sm">
                 <h3 className="text-lg font-bold text-slate-800 mb-6">Weekly Overview</h3>
                 <div className="flex items-end justify-between h-48 px-2 gap-2">
@@ -345,7 +363,6 @@ const DoctorDashboard = () => {
                   <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-[#00d0f1]"></span> Revenue</div>
                 </div>
               </div>
-
             </div>
 
           </div>
@@ -353,7 +370,7 @@ const DoctorDashboard = () => {
         </main>
       </div>
 
-      {/* --- PATIENT DETAILS MODAL (SAAS STYLE) --- */}
+      {/* --- PATIENT DETAILS MODAL --- */}
       {selectedPatient && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#192a56]/60 backdrop-blur-sm p-4 animate-in fade-in zoom-in-95 duration-200">
           <div className="bg-white w-full max-w-4xl h-[85vh] rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row relative">
