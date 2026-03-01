@@ -5,7 +5,7 @@ const Vitals = require('../models/Vitals');
 const Doctor = require('../models/Doctor');
 const Patient = require('../models/Patient');
 const User = require('../models/User');
-
+const bcrypt = require('bcryptjs');
 
 // @desc    Get all user dashboard data
 // @route   GET /api/user/dashboard
@@ -157,6 +157,10 @@ await Transaction.create({
     method: "Credit Card",
     date: new Date()
 });
+
+
+
+
 */
 // ==========================================
 // 1. GET ADMIN PROFILE
@@ -266,5 +270,116 @@ exports.updatePassword = async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Server Error" });
+    }
+};
+
+
+// ==========================================
+// 1. GET PROFILE DATA & SETTINGS
+// ==========================================
+exports.getUserProfileSettings = async (req, res) => {
+    try {
+        // Extract user ID from token middleware
+        const userId = req.user.id || req.user._id || req.userId;
+
+        // 1. Get primary user info (Name & Email from Auth table)
+        const user = await User.findById(userId).select('name email');
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        // 2. Get extended profile info
+        let profile = await Profile.findOne({ user: userId });
+
+        // If profile doesn't exist, send basic user info with default values
+        if (!profile) {
+            return res.status(200).json({
+                name: user.name,
+                email: user.email,
+                phone: '',
+                bio: '',
+                img: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png',
+                themePreference: 'light',
+                accentColor: 'blue',
+                notificationPreferences: { email: true, sms: false, push: true, promo: false }
+            });
+        }
+
+        // Merge User email with Profile data and send to frontend
+        res.status(200).json({
+            ...profile._doc,
+            email: user.email // Always keep email synced from main User table
+        });
+
+    } catch (error) {
+        console.error("Fetch Settings Error:", error);
+        res.status(500).json({ message: "Server error while fetching profile" });
+    }
+};
+
+// ==========================================
+// 2. UPDATE PROFILE DATA & IMAGE
+// ==========================================
+exports.updateUserProfileSettings = async (req, res) => {
+    try {
+        const userId = req.user.id || req.user._id || req.userId;
+        const updateData = { ...req.body };
+
+        // 🚨 Frontend sends the image as "avatar", map it to "img" for the database
+        if (updateData.avatar) {
+            updateData.img = updateData.avatar;
+            delete updateData.avatar;
+        }
+
+        // Upsert logic: Update profile if it exists, create a new one if it doesn't.
+        // $set ensures we only update the fields sent by the user, protecting other fields.
+        const updatedProfile = await Profile.findOneAndUpdate(
+            { user: userId },
+            { $set: updateData },
+            { new: true, upsert: true, setDefaultsOnInsert: true }
+        );
+
+        // Keep the main User table's name in sync
+        if (updateData.name) {
+            await User.findByIdAndUpdate(userId, { name: updateData.name });
+        }
+
+        res.status(200).json(updatedProfile);
+
+    } catch (error) {
+        console.error("Update Settings Error:", error);
+        res.status(500).json({ message: "Failed to update profile" });
+    }
+};
+
+// ==========================================
+// 3. UPDATE PASSWORD (USING BCRYPTJS)
+// ==========================================
+exports.updateUserPassword = async (req, res) => {
+    try {
+        const userId = req.user.id || req.user._id || req.userId;
+        const { currentPassword, newPassword } = req.body;
+
+        // 1. Fetch user AND explicitly select the password field
+        const user = await User.findById(userId).select('+password');
+        if (!user) return res.status(404).json({ message: "User not found" });
+
+        // 2. Verify current password using Bcrypt
+        const isMatch = await bcrypt.compare(currentPassword, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: "Incorrect current password!" });
+        }
+
+        // 3. Hash the NEW password using Bcrypt
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+        // 4. Save the hashed password to the database
+        user.password = hashedPassword;
+        await user.save();
+
+        res.status(200).json({ message: "Password updated successfully!" });
+
+    } catch (error) {
+        console.error("Password Update Error:", error);
+        res.status(500).json({ message: "Security update failed" });
     }
 };

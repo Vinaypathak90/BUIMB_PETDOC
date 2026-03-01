@@ -185,11 +185,12 @@ exports.getChatHistory = async (req, res) => {
 
         const history = await ChatHistory.find({ userId: userId })
             .sort({ createdAt: -1 })
-            .select('title createdAt'); 
+            .select('title createdAt data'); // 🚨 NAYA: 'data' add kiya hai
             
         const formattedHistory = history.map(item => ({
             id: item._id,
             title: item.title,
+            data: item.data, // 🚨 NAYA: data frontend ko bhej rahe hain
             date: new Date(item.createdAt).toLocaleDateString()
         }));
 

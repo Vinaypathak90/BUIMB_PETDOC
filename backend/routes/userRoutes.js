@@ -6,7 +6,10 @@ const { getDashboardData, updateProfile,bookAppointment,
 getAdminProfile, 
     updateAdminProfile, 
     getAdmins, 
-    updatePassword } = require('../controllers/userController');
+    updatePassword,
+    getUserProfileSettings, 
+    updateUserProfileSettings, 
+    updateUserPassword } = require('../controllers/userController');
 const protect = require('../middleware/authMiddleware'); // Ensure you have authMiddleware from previous steps
 
 router.get('/dashboard', protect, getDashboardData);
@@ -22,4 +25,14 @@ router.get('/admins', protect, getAdmins);
 
 // 3. Password Route
 router.put('/update-password', protect, updatePassword);
+
+// 1. GET Request: Frontend loads Settings page -> fetch data
+router.get('/profile', protect, getUserProfileSettings);
+
+// 2. PUT Request: Frontend clicks "Save All Changes" -> update data & image
+router.put('/profile', protect, updateUserProfileSettings);
+
+// 3. PUT Request: Frontend clicks "Update Password" -> verify and hash new password
+router.put('/password', protect, updateUserPassword);
+
 module.exports = router;

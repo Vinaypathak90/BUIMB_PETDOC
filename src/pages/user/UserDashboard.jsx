@@ -4,7 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { 
   Menu, Bell, User, MapPin, Mail, Phone, Calendar, 
   Edit3, Activity, Heart, Clock, Save, Globe, Flag, Droplet, ChevronDown,
-  CalendarPlus, Thermometer, Weight, ArrowRight, FileText,Loader2
+  CalendarPlus, Thermometer, Weight, ArrowRight, FileText, Loader2
 } from 'lucide-react';
 
 const UserDashboard = () => {
@@ -38,20 +38,33 @@ const UserDashboard = () => {
   const [filteredCountries, setFilteredCountries] = useState(countriesList);
   const countryRef = useRef(null);
 
+  // 🚨 NAYA: UNIVERSAL TOKEN FETCHER (To prevent 401 Unauthorized errors)
+  const getAuthToken = () => {
+    let tokenStr = localStorage.getItem('user_token') || localStorage.getItem('token');
+    if (!tokenStr) return null;
+    try {
+      const parsed = JSON.parse(tokenStr);
+      return parsed.token || tokenStr;
+    } catch (e) {
+      return tokenStr;
+    }
+  };
+
   // --- 1. LOAD DATA FROM BACKEND ---
   useEffect(() => {
     const fetchDashboardData = async () => {
-      const storedData = JSON.parse(localStorage.getItem('user_token'));
+      const token = getAuthToken(); // 🚨 Updated to use safe token
       
-      if (!storedData || !storedData.token) {
+      if (!token) {
         navigate('/login');
         return;
       }
 
       try {
+        // 🟢 API 1: Fetch Profile & Appointments
         const response = await fetch('http://localhost:5000/api/user/dashboard', {
           headers: {
-            'Authorization': `Bearer ${storedData.token}`
+            'Authorization': `Bearer ${token}`
           }
         });
 
@@ -62,12 +75,16 @@ const UserDashboard = () => {
 
         const data = await response.json();
 
-        // 1. Profile Logic
+        // Profile Logic
         if (data.profile) {
           setUserProfile(data.profile);
           setFormData(data.profile); // Populate edit form
         } else {
           // No profile? Open modal and prepopulate basic Auth data
+          const rawData = localStorage.getItem('user_token');
+          let storedData = {};
+          try { storedData = JSON.parse(rawData); } catch(e) {}
+
           setFormData(prev => ({ 
              ...prev, 
              name: storedData.name || '', 
@@ -76,10 +93,35 @@ const UserDashboard = () => {
           setIsModalOpen(true);
         }
 
-        // 2. Set other data
+        // Set other basic data
         setAppointments(data.appointments || []);
-        setRecentReports(data.reports || []);
         setHealthVitals(data.vitals || null);
+
+        // 🚨 NAYA API 2: FETCH REAL AI DIAGNOSIS HISTORY
+        const aiHistoryRes = await fetch('http://localhost:5000/api/ai/history', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (aiHistoryRes.ok) {
+            const aiData = await aiHistoryRes.json();
+            
+            // Filter only true Medical Reports (Exclude "Hi/Hello" general chats)
+            const actualMedicalReports = aiData.history
+                .filter(item => item.data && item.data.disease && item.data.disease !== "General Query")
+                .map(item => ({
+                    _id: item.id,
+                    disease: item.data.disease,
+                    severity: item.data.severity || "Low",
+                    findings: item.data.findings || "Detailed analysis attached.",
+                    doctorType: item.data.doctorType || "General Physician",
+                    date: item.date
+                }));
+            
+            setRecentReports(actualMedicalReports);
+        } else {
+            // Fallback to empty or older reports if AI fetch fails
+            setRecentReports(data.reports || []);
+        }
 
       } catch (error) {
         console.error("Error fetching dashboard:", error);
@@ -127,14 +169,14 @@ const UserDashboard = () => {
   // --- 2. SAVE PROFILE TO BACKEND ---
   const handleSaveProfile = async (e) => {
     e.preventDefault();
-    const storedData = JSON.parse(localStorage.getItem('user_token'));
+    const token = getAuthToken(); // 🚨 Updated safe token
 
     try {
         const response = await fetch('http://localhost:5000/api/user/profile', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${storedData.token}`
+                'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify(formData)
         });
@@ -319,7 +361,7 @@ const UserDashboard = () => {
                             <p className="text-blue-200 text-sm relative z-10">Based on your recent vitals.</p>
                         </div>
 
-                        {/* Recent Reports */}
+                        {/* Recent Reports (Now populated dynamically from AI History) */}
                         <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex-1">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
@@ -338,13 +380,13 @@ const UserDashboard = () => {
                                                     <p className="text-[10px] text-slate-500">{report.date}</p>
                                                 </div>
                                                 <span className={`text-[10px] font-bold px-2 py-1 rounded uppercase ${
-                                                    report.severity === 'High' ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'
+                                                    (report.severity === 'High' || report.severity === 'Critical') ? 'bg-red-100 text-red-600' : 'bg-yellow-100 text-yellow-700'
                                                 }`}>
                                                     {report.severity}
                                                 </span>
                                             </div>
                                             <p className="text-xs text-slate-500 line-clamp-2 mb-3">{report.findings}</p>
-                                            <Link to="/user/book-appointment" className="text-[10px] font-bold text-[#192a56] flex items-center gap-1 group-hover:gap-2 transition-all">
+                                            <Link to={`/user/book-appointment?specialty=${encodeURIComponent(report.doctorType)}`} className="text-[10px] font-bold text-[#192a56] flex items-center gap-1 group-hover:gap-2 transition-all">
                                                 Book {report.doctorType} <ArrowRight size={12}/>
                                             </Link>
                                         </div>
