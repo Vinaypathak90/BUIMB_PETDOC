@@ -2,7 +2,7 @@ import React from 'react';
 import { 
   LayoutDashboard, CalendarPlus, MapPin, MonitorPlay, 
   BrainCircuit, History, CreditCard, Settings, LogOut, 
-  ChevronRight 
+  ChevronRight, Star // 🚨 NAYA: Star icon import kiya hai reviews ke liye
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
@@ -37,6 +37,9 @@ const UserSidebar = ({ closeSidebar }) => {
 
   // --- LOGOUT FUNCTION ---
   const handleLogout = () => {
+    // Clear tokens securely on logout
+    localStorage.removeItem('user_token');
+    localStorage.removeItem('token');
     navigate('/'); 
   };
 
@@ -77,8 +80,6 @@ const UserSidebar = ({ closeSidebar }) => {
             badge={true} // Red dot for live feel
         />
 
-        
-
         {/* 4. Advanced AI */}
         <SidebarItem 
             icon={BrainCircuit} 
@@ -104,7 +105,15 @@ const UserSidebar = ({ closeSidebar }) => {
             active={isActive('/user/transactions')} 
         />
 
-        {/* 6. System */}
+        {/* 🚨 6. NAYA: Feedback & Reviews */}
+        <SidebarItem 
+            icon={Star} 
+            label="Write a Review" 
+            path="/user/write-review" 
+            active={isActive('/user/write-review')} 
+        />
+
+        {/* 7. System */}
         <SidebarItem 
             icon={Settings} 
             label="Settings" 
@@ -115,7 +124,7 @@ const UserSidebar = ({ closeSidebar }) => {
       </nav>
 
       {/* Logout Button */}
-<div className="p-4 border-t border-white/10 bg-[#152347] shrink-0">
+      <div className="p-4 border-t border-white/10 bg-[#152347] shrink-0">
           <button 
             onClick={handleLogout}
             className="flex items-center justify-center gap-3 w-full px-4 py-3 text-sm font-bold text-red-400 hover:bg-red-500/10 hover:text-red-300 rounded-xl transition-all duration-200"

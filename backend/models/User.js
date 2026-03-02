@@ -16,17 +16,27 @@ const userSchema = mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['admin', 'doctor', 'receptionist', 'patient'], // Sirf ye roles allowed hain
+        enum: ['admin', 'doctor', 'receptionist', 'patient'],
         default: 'patient'
     },
+    
+    // --- 🚨 NEW FIELDS FOR PROFILE OVERVIEW ---
+    phone: { type: String, default: "" },
+    dob: { type: String, default: "" },
+    address: { type: String, default: "" },
+    bio: { type: String, default: "" },
+    img: { type: String, default: "" },   // Base64 Profile Image
+    cover: { type: String, default: "" }, // Base64 Cover Image
+    isProfileComplete: { type: Boolean, default: false },
+
+    // --- DOCTOR SPECIFIC FIELDS ---
     speciality: { type: String },
     fee: { type: Number },
     exp: { type: String },
     availability: [{ type: String }]
 },
-
- {
-    timestamps: true // CreatedAt aur UpdatedAt khud aa jayega
+{
+    timestamps: true 
 });
 
 module.exports = mongoose.model('User', userSchema);

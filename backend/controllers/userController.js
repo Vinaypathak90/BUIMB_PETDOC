@@ -188,7 +188,7 @@ exports.updateAdminProfile = async (req, res) => {
         const user = await User.findById(req.user.id);
 
         if (user) {
-            // Update fields if present in body
+            // Fields update logic
             user.name = req.body.name || user.name;
             user.phone = req.body.phone || user.phone;
             user.dob = req.body.dob || user.dob;
@@ -200,6 +200,8 @@ exports.updateAdminProfile = async (req, res) => {
             // Mark profile complete if critical fields exist
             if (user.phone && user.address) {
                 user.isProfileComplete = true;
+            } else {
+                user.isProfileComplete = false;
             }
 
             const updatedUser = await user.save();
@@ -211,14 +213,13 @@ exports.updateAdminProfile = async (req, res) => {
                 role: updatedUser.role,
                 phone: updatedUser.phone,
                 img: updatedUser.img,
-                isProfileComplete: updatedUser.isProfileComplete,
-                token: req.token // If you want to refresh token (optional)
+                isProfileComplete: updatedUser.isProfileComplete
             });
         } else {
             res.status(404).json({ message: "User not found" });
         }
     } catch (error) {
-        console.error(error);
+        console.error("Update Error:", error);
         res.status(500).json({ message: "Update failed" });
     }
 };
@@ -244,35 +245,34 @@ exports.getAdmins = async (req, res) => {
 exports.updatePassword = async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body;
-        const user = await User.findById(req.user.id);
+        const userId = req.user.id || req.user._id;
 
+        // 1. User ko database mein dhoondhein (password field ke saath)
+        const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({ message: "User not found" });
         }
 
-        // Verify Current Password
-        // Note: We use bcrypt.compare directly here because user.password is hashed
-        // but user found via findById doesn't have the matchPassword method available 
-        // unless you explicitly load the schema methods or use user instance.
-        // The method defined in schema works on the instance 'user'.
-        const isMatch = await user.matchPassword(currentPassword);
-        
+        // 2. Check karein ki purana password sahi hai?
+        const isMatch = await bcrypt.compare(currentPassword, user.password);
         if (!isMatch) {
-            return res.status(400).json({ message: "Incorrect current password" });
+            return res.status(400).json({ message: "Purana password galat hai!" });
         }
 
-        // Update to New Password (pre-save middleware handles hashing)
-        user.password = newPassword;
+        // 3. Naye password ko hash karein
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(newPassword, salt);
+
+        // 4. Save karein
         await user.save();
 
-        res.json({ message: "Password updated successfully" });
+        res.status(200).json({ message: "Password successfully update ho gaya!" });
 
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Server Error" });
+        console.error("❌ Password Update Error:", error);
+        res.status(500).json({ message: "Server Error: Password update nahi ho paya" });
     }
 };
-
 
 // ==========================================
 // 1. GET PROFILE DATA & SETTINGS

@@ -39,6 +39,10 @@ app.use('/api/receptionist', receptionistRoutes);
 // 🚨 YAHAN DOCTOR ROUTES MOUNT KIYE HAIN 🚨
 app.use('/api/doctor', doctorRoutes);
 
+// 🚨 REVIEW ROUTES: Mount under /api/reviews
+const reviewRoutes = require('./routes/reviewRoutes');
+app.use('/api/reviews', reviewRoutes);
+
 // Safe Test Route (JSON format mein taaki frontend crash na ho)
 app.get('/', (req, res) => {
     res.json({ message: 'API is running successfully...' });

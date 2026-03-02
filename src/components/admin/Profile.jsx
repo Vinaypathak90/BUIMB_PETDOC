@@ -23,45 +23,60 @@ const Profile = () => {
   const [passMessage, setPassMessage] = useState({ type: '', text: '' });
 
   // --- 1. FETCH INITIAL DATA (Profile & Team) ---
-  const fetchAllData = async () => {
+ const fetchAllData = async () => {
     setIsLoading(true);
-    const storedData = JSON.parse(localStorage.getItem('user_token'));
-    
-    // Redirect if no token
-    if (!storedData || !storedData.token) { 
-        navigate('/login'); 
-        return; 
-    }
+    console.log("🔄 Refresh detected: Attempting to fetch data...");
 
-    const token = storedData.token;
+    // 1. Check LocalStorage
+    const rawData = localStorage.getItem('user_token');
+    console.log("📦 Raw Token from Storage:", rawData);
+
+    if (!rawData) {
+        console.error("❌ Error: No token found in localStorage. Redirecting to login...");
+        navigate('/login');
+        return;
+    }
 
     try {
-      // Parallel Fetching for Speed
-      const [profileRes, teamRes] = await Promise.all([
-        fetch('http://localhost:5000/api/user/admin-profile', { 
-            headers: { 'Authorization': `Bearer ${token}` } 
-        }),
-        fetch('http://localhost:5000/api/user/admins', { 
-            headers: { 'Authorization': `Bearer ${token}` } 
-        })
-      ]);
+        const storedData = JSON.parse(rawData);
+        const token = storedData.token || storedData; // Handle both object and string format
+        
+        console.log("🔑 Token extracted successfully. Sending requests...");
 
-      if (profileRes.ok) {
-          const profileData = await profileRes.json();
-          setProfile(profileData);
-      }
-      
-      if (teamRes.ok) {
-          const teamData = await teamRes.json();
-          setTeam(teamData);
-      }
+        // 2. Parallel Fetching
+        const [profileRes, teamRes] = await Promise.all([
+            fetch('http://localhost:5000/api/user/admin-profile', { 
+                headers: { 'Authorization': `Bearer ${token}` } 
+            }),
+            fetch('http://localhost:5000/api/user/admins', { 
+                headers: { 'Authorization': `Bearer ${token}` } 
+            })
+        ]);
+
+        // 3. Handle Profile Response
+        if (profileRes.ok) {
+            const profileData = await profileRes.json();
+            console.log("✅ Profile Data Received:", profileData);
+            setProfile(profileData);
+        } else {
+            console.error("❌ Profile API Error:", profileRes.status);
+            if(profileRes.status === 401) navigate('/login');
+        }
+
+        // 4. Handle Team Response
+        if (teamRes.ok) {
+            const teamData = await teamRes.json();
+            console.log("✅ Team Data Received. Total members:", teamData.length);
+            setTeam(teamData);
+        }
 
     } catch (err) {
-      console.error("Error loading data", err);
+        console.error("❌ System Crash during fetch:", err);
     } finally {
-      setIsLoading(false);
+        setIsLoading(false);
+        console.log("🏁 Fetch process finished.");
     }
-  };
+};
 
   useEffect(() => { fetchAllData(); }, [navigate]);
 

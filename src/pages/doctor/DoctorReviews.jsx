@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import DoctorSidebar from '../../components/doctor/DoctorSidebar'; 
 import { 
   Menu, Bell, Search, Filter, Star, ThumbsUp, MessageCircle, 
-  Trash2, Reply, CheckCircle, ChevronLeft, ChevronRight, User, MoreHorizontal
+  Trash2, Reply, CheckCircle, ChevronLeft, ChevronRight, User, MoreHorizontal, Loader2
 } from 'lucide-react';
 
 const DoctorReviews = () => {
@@ -10,57 +10,133 @@ const DoctorReviews = () => {
   const [reviews, setReviews] = useState([]);
   const [filterRating, setFilterRating] = useState('All'); // All, 5, 4, 3, 2, 1
   const [currentPage, setCurrentPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(true); // Loading state added
   const itemsPerPage = 5;
 
   // --- REPLY STATE ---
   const [replyId, setReplyId] = useState(null); // ID of review being replied to
   const [replyText, setReplyText] = useState("");
 
-  // --- MOCK DATA (15+ Reviews) ---
-  const mockReviews = [
-    { id: 1, name: "Charlene Reed", img: "https://randomuser.me/api/portraits/women/44.jpg", date: "14 Feb 2026", rating: 5, comment: "Dr. Edalin is amazing! The treatment was painless and quick. Highly recommended for dental surgery.", helpful: 12, reply: "Thank you Charlene! Glad you are feeling better." },
-    { id: 2, name: "Travis Trimble", img: "https://randomuser.me/api/portraits/men/32.jpg", date: "12 Feb 2026", rating: 4, comment: "Good experience overall, but the waiting time was a bit long. The doctor is very knowledgeable though.", helpful: 5, reply: null },
-    { id: 3, name: "Carl Kelly", img: "https://randomuser.me/api/portraits/men/85.jpg", date: "10 Feb 2026", rating: 5, comment: "Best clinic in the city. The staff is very polite and professional.", helpful: 8, reply: null },
-    { id: 4, name: "Michelle Fairfax", img: "https://randomuser.me/api/portraits/women/65.jpg", date: "08 Feb 2026", rating: 5, comment: "I was very nervous about the surgery, but Dr. Edalin explained everything clearly. Very happy with the results!", helpful: 20, reply: null },
-    { id: 5, name: "John Doe", img: "https://randomuser.me/api/portraits/men/12.jpg", date: "05 Feb 2026", rating: 3, comment: "Treatment was okay, but the reception staff could be friendlier.", helpful: 2, reply: null },
-    { id: 6, name: "Gina Moore", img: "https://randomuser.me/api/portraits/women/22.jpg", date: "01 Feb 2026", rating: 5, comment: "Fantastic service! My toothache is completely gone.", helpful: 15, reply: "Happy to help, Gina!" },
-    { id: 7, name: "Robert Fox", img: "https://randomuser.me/api/portraits/men/45.jpg", date: "28 Jan 2026", rating: 4, comment: "Clean clinic and modern equipment. A bit expensive though.", helpful: 4, reply: null },
-    { id: 8, name: "Emily Clarke", img: "https://randomuser.me/api/portraits/women/10.jpg", date: "25 Jan 2026", rating: 5, comment: "Dr. Edalin has a magical touch. Didn't feel a thing!", helpful: 9, reply: null },
-    { id: 9, name: "Michael Ross", img: "https://randomuser.me/api/portraits/men/33.jpg", date: "20 Jan 2026", rating: 2, comment: "Appointment was delayed by 45 minutes. Not happy with the schedule management.", helpful: 1, reply: null },
-    { id: 10, name: "Sarah Jenkins", img: "https://randomuser.me/api/portraits/women/55.jpg", date: "15 Jan 2026", rating: 5, comment: "Very professional and caring doctor. Will definitely visit again.", helpful: 6, reply: null },
-    { id: 11, name: "David Miller", img: "https://randomuser.me/api/portraits/men/66.jpg", date: "10 Jan 2026", rating: 4, comment: "Good diagnosis. The prescribed medicines worked effectively.", helpful: 3, reply: null },
-    { id: 12, name: "Emma Watson", img: "https://randomuser.me/api/portraits/women/77.jpg", date: "05 Jan 2026", rating: 5, comment: "Highly recommended for kids. My son was very comfortable.", helpful: 11, reply: null },
-    { id: 13, name: "Liam Neeson", img: "https://randomuser.me/api/portraits/men/88.jpg", date: "01 Jan 2026", rating: 5, comment: "Expert hands! The extraction was smooth.", helpful: 7, reply: null },
-    { id: 14, name: "Olivia Brown", img: "https://randomuser.me/api/portraits/women/90.jpg", date: "28 Dec 2025", rating: 3, comment: "Average experience. Nothing special.", helpful: 0, reply: null },
-    { id: 15, name: "Noah Wilson", img: "https://randomuser.me/api/portraits/men/91.jpg", date: "25 Dec 2025", rating: 5, comment: "Saved my tooth! I am so grateful.", helpful: 10, reply: null },
-  ];
+  // --- GET AUTH TOKEN ---
+  // --- 🚨 SUPER-CHARGED AUTH TOKEN GETTER ---
+  const getAuthToken = () => {
+    // Yahan humne saare common naam daal diye hain
+    let tokenStr = localStorage.getItem('doctor_token') || 
+                   localStorage.getItem('token') || 
+                   localStorage.getItem('user_token') || 
+                   localStorage.getItem('authToken') ||
+                   localStorage.getItem('jwt'); // Agar aapka koi aur naam hai, toh yahan add karein
+                   
+    if (!tokenStr) return null;
 
-  useEffect(() => {
-    setReviews(mockReviews);
-  }, []);
-
-  // --- STATS CALCULATION ---
-  const totalReviews = reviews.length;
-  const averageRating = (reviews.reduce((acc, r) => acc + r.rating, 0) / totalReviews).toFixed(1);
-  const positiveReviews = reviews.filter(r => r.rating >= 4).length;
-  const satisfactionRate = Math.round((positiveReviews / totalReviews) * 100);
-
-  // --- HANDLERS ---
-  const handleDelete = (id) => {
-    if(window.confirm("Are you sure you want to delete this review?")) {
-        setReviews(reviews.filter(r => r.id !== id));
+    try { 
+        const parsed = JSON.parse(tokenStr);
+        return parsed.token || parsed.accessToken || tokenStr; 
+    } catch (e) { 
+        return tokenStr; 
     }
   };
 
-  const handleSubmitReply = (id) => {
+  // --- 1. FETCH REVIEWS FROM BACKEND ---
+useEffect(() => {
+    const fetchReviews = async () => {
+      const token = getAuthToken();
+
+      // 🚨 NAYA SPEED BREAKER: Agar token 'null' ya 'undefined' hai, toh API call mat karo
+      if (!token || token === "null" || token === "undefined") {
+          console.warn("⏳ Waiting for a valid token...");
+          setIsLoading(false);
+          return; 
+      }
+
+      setIsLoading(true);
+      try {
+        const res = await fetch('http://localhost:5000/api/reviews/doctor', {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            const formattedData = data.map(r => ({
+                ...r, 
+                id: r._id, 
+                name: r.patientName, 
+                img: r.patientImg 
+            }));
+            setReviews(formattedData);
+        } else {
+            console.error("🚨 Backend rejected the token.");
+        }
+      } catch (error) {
+        console.error("Error fetching reviews", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchReviews();
+  }, []);
+  // --- STATS CALCULATION (Made safe for empty arrays) ---
+  const totalReviews = reviews.length;
+  const averageRating = totalReviews > 0 
+    ? (reviews.reduce((acc, r) => acc + r.rating, 0) / totalReviews).toFixed(1) 
+    : "0.0";
+  const positiveReviews = reviews.filter(r => r.rating >= 4).length;
+  const satisfactionRate = totalReviews > 0 
+    ? Math.round((positiveReviews / totalReviews) * 100) 
+    : 0;
+
+  // --- HANDLERS ---
+
+  // 2. DELETE REVIEW API
+  const handleDelete = async (id) => {
+    if(window.confirm("Are you sure you want to delete this review?")) {
+        try {
+            const res = await fetch(`http://localhost:5000/api/reviews/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+            });
+            if(res.ok) {
+                setReviews(reviews.filter(r => r.id !== id));
+            } else {
+                alert("Failed to delete review from server.");
+            }
+        } catch(error) {
+            alert("Network error: Failed to delete review.");
+        }
+    }
+  };
+
+  // 3. POST REPLY API
+  const handleSubmitReply = async (id) => {
     if(!replyText.trim()) return;
-    const updatedReviews = reviews.map(r => 
-        r.id === id ? { ...r, reply: replyText } : r
-    );
-    setReviews(updatedReviews);
-    setReplyId(null);
-    setReplyText("");
-    alert("Reply posted successfully!");
+    try {
+        const res = await fetch(`http://localhost:5000/api/reviews/${id}/reply`, {
+            method: 'PUT',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${getAuthToken()}` 
+            },
+            body: JSON.stringify({ reply: replyText })
+        });
+
+        if (res.ok) {
+            const updatedReviews = reviews.map(r => 
+                r.id === id ? { ...r, reply: replyText } : r
+            );
+            setReviews(updatedReviews);
+            setReplyId(null);
+            setReplyText("");
+            alert("Reply posted successfully!");
+        } else {
+            alert("Failed to post reply.");
+        }
+    } catch(error) {
+        alert("Network error while posting reply.");
+    }
   };
 
   // --- FILTER & PAGINATION LOGIC ---
@@ -79,6 +155,14 @@ const DoctorReviews = () => {
       <Star key={i} size={14} className={i < rating ? "fill-yellow-400 text-yellow-400" : "text-slate-300"} />
     ));
   };
+
+  if (isLoading) {
+      return (
+          <div className="min-h-screen flex items-center justify-center bg-[#f8f9fa]">
+              <Loader2 className="animate-spin text-blue-600" size={40} />
+          </div>
+      );
+  }
 
   return (
     <div className="bg-[#f8f9fa] min-h-screen relative font-sans">
@@ -117,7 +201,7 @@ const DoctorReviews = () => {
                       <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Average Rating</p>
                       <div className="flex items-center gap-2">
                           <h3 className="text-3xl font-black text-slate-800">{averageRating}</h3>
-                          <div className="flex text-yellow-400">{renderStars(Math.round(averageRating))}</div>
+                          <div className="flex text-yellow-400">{renderStars(Math.round(Number(averageRating)))}</div>
                       </div>
                   </div>
                   <div className="p-3 bg-yellow-50 text-yellow-600 rounded-xl"><Star size={24} fill="currentColor"/></div>
@@ -204,7 +288,7 @@ const DoctorReviews = () => {
                                           <div className="mt-4 bg-blue-50/50 p-4 rounded-xl border border-blue-100 flex gap-3">
                                               <img src="https://randomuser.me/api/portraits/men/85.jpg" alt="Doc" className="w-8 h-8 rounded-full border border-blue-200" />
                                               <div>
-                                                  <p className="text-xs font-bold text-blue-800 mb-1">Dr. Edalin Hendry (You)</p>
+                                                  <p className="text-xs font-bold text-blue-800 mb-1">Your Reply</p>
                                                   <p className="text-xs text-slate-600">{review.reply}</p>
                                               </div>
                                           </div>
@@ -230,7 +314,7 @@ const DoctorReviews = () => {
                                       {/* Footer */}
                                       <div className="mt-3 flex items-center gap-4">
                                           <button className="text-xs font-bold text-slate-400 flex items-center gap-1 hover:text-blue-500 transition-colors">
-                                              <ThumbsUp size={12}/> Helpful ({review.helpful})
+                                              <ThumbsUp size={12}/> Helpful ({review.helpful || 0})
                                           </button>
                                       </div>
                                   </div>

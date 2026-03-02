@@ -56,16 +56,8 @@ const doctorSchema = mongoose.Schema({
             description: { type: String }
         }]
     }],
-    specialties: [{
-    id: String,
-    name: String,
-    services: [{
-        id: String,
-        name: String,
-        price: String,
-        description: String
-    }]
-}],
+   
+
     // --- 📅 SCHEDULE & TIMINGS ---
     slotDuration: { type: Number, default: 30 },
     schedule: {

@@ -26,7 +26,7 @@ import AiAnalysis from './pages/user/AiAnalysis';
 import PastAppointments from './pages/user/PastAppointments';
 import TransactionHistory from './pages/user/TransactionHistory';
 import Setting from './pages/user/uSettings';
-
+import WriteReview from './pages/user/WriteReview'; // 🚨 New Review Page
 // --- DOCTOR PAGES ---
 import DoctorDashboard from './pages/doctor/DoctorDashboard';
 import DoctorAppointments from './pages/doctor/DoctorAppointments';
@@ -148,6 +148,7 @@ function App() {
               <Route path="appointment-history" element={<PastAppointments />} />
               <Route path="transactions" element={<TransactionHistory />} />
               <Route path="settings" element={<Setting />} />
+              <Route path="write-review" element={<WriteReview />} />
             </Routes>
           </ProtectedRoute>
         } />
